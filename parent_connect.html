@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero page-hero">
+  <h2>Мой ребёнок</h2>
+  <p>Привяжите аккаунт ученика по логину — после его подтверждения вы увидите краткую сводку: успехи и задачи, требующие внимания.</p>
+</section>
+
+{% if flash_ok == "link_sent" %}
+<section class="card toast-success">
+  <p><b>Запрос отправлен.</b> Попросите ребёнка зайти в «Настройки» → «Запросы от родителей» и нажать «Подтвердить».</p>
+</section>
+{% endif %}
+
+{% if flash_err %}
+<section class="card" style="border-color: var(--warning-500, #ca8a04);">
+  <p><b>Не удалось отправить запрос.</b>
+    {% if flash_err == "empty_username" %}Укажите логин ученика.
+    {% elif flash_err == "student_not_found" %}Ученик с таким логином не найден. Проверьте написание.
+    {% elif flash_err == "self_link" %}Нельзя указать свой логин.
+    {% elif flash_err == "already_confirmed" %}Этот ученик уже привязан к вашему аккаунту.
+    {% elif flash_err == "already_pending" %}Запрос этому ученику уже отправлен — ждите подтверждения.
+    {% else %}{{ flash_err }}{% endif %}
+  </p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h3 class="settings-section-title">Добавить ребёнка</h3>
+  <p class="muted">Введите <b>логин</b> ученика (тот же, что он использует при входе).</p>
+  <form action="/parent/{{ current_user.id }}/connect" method="post" class="row-form" style="flex-wrap: wrap; gap: var(--sp-3); align-items: flex-end;">
+    <label class="settings-field" style="min-width:220px; flex:1;">
+      <span>Логин ученика</span>
+      <input type="text" name="student_username" value="{{ prefill_username }}" required placeholder="например, ivan_student" autocomplete="off">
+    </label>
+    <button type="submit" class="btn">Отправить запрос на привязку</button>
+  </form>
+</section>
+
+{% if outgoing_pending %}
+<section class="card">
+  <h3 class="settings-section-title">Ожидают подтверждения ученика</h3>
+  <ul class="muted" style="margin:0; padding-left: 1.2rem;">
+    {% for link in outgoing_pending %}
+    <li>
+      {% set st = wait_students.get(link.student_id) %}
+      {% if st %}{{ st.full_name }} · @{{ st.username }}{% else %}ID {{ link.student_id }}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for block in children_snapshots %}
+<section class="card">
+  <div class="settings-parent-header cluster" style="margin-bottom: var(--sp-3);">
+    <h3 class="settings-section-title" style="margin:0;">
+      {{ block.student.full_name }}
+      <span class="hint">@{{ block.student.username }}{% if block.student.class_name %} · {{ block.student.class_name }}{% endif %}</span>
+    </h3>
+    <a class="btn btn-ghost" href="/parent/{{ current_user.id }}">Полный кабинет родителя</a>
+  </div>
+
+  <div class="kpi-grid" style="margin-bottom: var(--sp-4);">
+    <div class="card"><div class="metric">{{ block.progress.completion_percent }}%</div><div class="muted">выполнено</div></div>
+    <div class="card"><div class="metric">{{ block.progress.done }}</div><div class="muted">закрыто задач</div></div>
+    <div class="card"><div class="metric">{{ block.gamification.points }}</div><div class="muted">баллов</div></div>
+    <div class="card"><div class="metric">{{ block.gamification.streak_days }}</div><div class="muted">серия, дн.</div></div>
+    <div class="card"><div class="metric">{{ block.progress.overdue }}</div><div class="muted">просрочено</div></div>
+  </div>
+
+  {% if block.gamification.badges %}
+  <p class="muted" style="margin:0 0 var(--sp-2);"><b>Достижения:</b>
+    {% for b in block.gamification.badges %}<span class="pill" style="margin: 2px 4px 2px 0;">{{ b }}</span>{% endfor %}
+  </p>
+  {% endif %}
+
+  {% if block.overdue_tasks %}
+  <h4 class="settings-section-title" style="font-size: var(--fs-sm); margin: var(--sp-3) 0 var(--sp-2);">Просроченные задачи</h4>
+  <ul style="margin:0; padding-left: 1.2rem;">
+    {% for t in block.overdue_tasks %}
+    <li><strong>{{ t.subject }}</strong> — дедлайн {{ t.due_at }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted" style="margin:0;">Нет просроченных задач по этому профилю.</p>
+  {% endif %}
+
+  {% if block.open_tasks %}
+  <h4 class="settings-section-title" style="font-size: var(--fs-sm); margin: var(--sp-3) 0 var(--sp-2);">В работе / новые</h4>
+  <ul style="margin:0; padding-left: 1.2rem;">
+    {% for t in block.open_tasks %}
+    <li>{{ t.subject }} — <span class="pill status-{{ t.status.value }}">{{ t.status.value }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if not children_snapshots and not outgoing_pending %}
+<p class="muted">Когда привязка будет подтверждена учеником, здесь появится сводка по успехам и задачам.</p>
+{% endif %}
+{% endblock %}

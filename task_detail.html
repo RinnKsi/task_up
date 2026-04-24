@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro status_label(status) -%}
+  {%- if status == "new" -%}Новая
+  {%- elif status == "in_progress" -%}В работе
+  {%- elif status == "done" -%}Выполнена
+  {%- elif status == "overdue" -%}Просрочена
+  {%- else -%}{{ status }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% if current_user.role.value == "student" %}
+<section class="ai-card compact-motivation">
+  <h3>Ollama мотивация по задаче</h3>
+  <p><b>{{ next_action.title }}</b></p>
+  <p class="muted">{{ next_action.message }}</p>
+</section>
+{% else %}
+{% if first_step %}
+<section class="first-step-card">
+  <h4>Первый шаг от AI</h4>
+  <p>{{ first_step }}</p>
+</section>
+{% endif %}
+
+<section class="ai-card">
+  <h3>AI рекомендация по этой задаче</h3>
+  <p><b>{{ next_action.title }}</b></p>
+  <p class="muted">{{ next_action.message }}</p>
+</section>
+{% endif %}
+
+<section class="card urgency-{{ urgency.level }}-border">
+  <div class="task-top">
+    <div>
+      <h2>{{ task.subject }}</h2>
+      <p class="muted">{{ task.description }}</p>
+    </div>
+    <div>
+      <span class="urgency-wrap urgency-{{ urgency.level }}">
+        {% if urgency.level == "critical" %}<span class="rec-dot"></span>{% endif %}
+        {{ urgency.label }}{% if urgency.hours_left is not none and urgency.level != "overdue" %} · {{ urgency.hours_left }}ч{% endif %}
+      </span>
+      <span class="pill status-{{ task.status.value }}">{{ status_label(task.status.value) }}</span>
+    </div>
+  </div>
+  <p class="task-meta">Дедлайн: {{ task.due_at }}</p>
+  {% if current_user.role.value != "student" %}
+  <div class="deadline-track">
+    <div class="deadline-fill" style="width: {{ (urgency.progress_ratio * 100)|round(0, 'floor') }}%"></div>
+  </div>
+  <div class="ai-suggestion-meta">
+    <span><b>Приоритет:</b> {{ priority }}</span>
+    {% if estimated_time %}<span><b>Оценка:</b> {{ estimated_time }} мин</span>{% endif %}
+    <span><b>Сложность:</b> {{ difficulty_label }}</span>
+    <span><b>Баллы за выполнение:</b> +{{ task_points }}</span>
+    {% if task.parse_confidence %}<span><b>Уверенность AI:</b> {{ (task.parse_confidence * 100)|round(0, 'floor') }}%</span>{% endif %}
+  </div>
+  {% if tags %}
+  <div style="margin-top:8px;">
+    {% for tag in tags %}<span class="ai-chip">#{{ tag }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+  <div class="task-actions">
+    {% if current_user.role.value in ["student", "teacher"] %}
+    <form action="/tasks/{{ task.id }}/in-progress" method="post">
+      <button type="submit">В работу</button>
+    </form>
+    <form action="/tasks/{{ task.id }}/done" method="post">
+      <button type="submit">Отметить выполненной</button>
+    </form>
+    {% endif %}
+    {% if current_user.role.value == "teacher" %}
+    <form action="/tasks/{{ task.id }}/force-overdue" method="post">
+      <button type="submit" class="warn">Сделать просроченной</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if current_user.role.value == "student" %}
+<section class="card">
+  <div class="cluster" style="justify-content: space-between;">
+    <h3 style="margin:0;">Рабочий чат с Ollama</h3>
+    <button type="button" id="task-chat-clear" class="btn-ghost">Очистить чат</button>
+  </div>
+  <p class="muted">Реальный диалог с моделью по задаче: что непонятно, с чего начать, как проверить решение.</p>
+  <div id="task-chat-list" class="task-chat-list" aria-live="polite"></div>
+  <div class="cluster" style="gap:8px; margin:8px 0 10px;">
+    <button type="button" class="btn-secondary task-chat-chip" data-q="Объясни задание простыми словами.">Объясни проще</button>
+    <button type="button" class="btn-secondary task-chat-chip" data-q="С чего начать прямо сейчас?">С чего начать?</button>
+    <button type="button" class="btn-secondary task-chat-chip" data-q="Проверь типичные ошибки в этом задании.">Типичные ошибки</button>
+  </div>
+  <form id="task-help-form" class="stack-2">
+    <input type="hidden" name="task_id" value="{{ task.id }}">
+    <textarea name="question" id="task-help-question" rows="3" placeholder="Например: не понимаю второй шаг, объясни подробнее"></textarea>
+    <div class="cluster">
+      <button type="submit" class="btn" id="task-chat-send">Отправить</button>
+      <span class="muted" id="task-chat-status"></span>
+    </div>
+  </form>
+</section>
+<script>
+(() => {
+  const form = document.getElementById("task-help-form");
+  const list = document.getElementById("task-chat-list");
+  const input = document.getElementById("task-help-question");
+  const status = document.getElementById("task-chat-status");
+  const sendBtn = document.getElementById("task-chat-send");
+  const clearBtn = document.getElementById("task-chat-clear");
+  let typingNode = null;
+  if (!form || !list || !input) return;
+  const taskId = "{{ task.id }}";
+  const storageKey = `task_chat_${taskId}`;
+
+  const readHistory = () => {
+    try {
+      const raw = localStorage.getItem(storageKey) || "[]";
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const saveHistory = (history) => {
+    try { localStorage.setItem(storageKey, JSON.stringify(history.slice(-30))); } catch {}
+  };
+  const addBubble = (role, text) => {
+    const wrap = document.createElement("div");
+    wrap.className = `task-chat-bubble ${role === "user" ? "is-user" : "is-ai"}`;
+    const who = document.createElement("div");
+    who.className = "task-chat-role";
+    who.textContent = role === "user" ? "Вы" : "Ollama";
+    const body = document.createElement("div");
+    body.className = "task-chat-text";
+    body.textContent = text;
+    wrap.appendChild(who);
+    wrap.appendChild(body);
+    list.appendChild(wrap);
+    list.scrollTop = list.scrollHeight;
+  };
+  const render = () => {
+    list.innerHTML = "";
+    const history = readHistory();
+    if (!history.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "Чат пуст. Задайте первый вопрос по задаче.";
+      list.appendChild(empty);
+      return;
+    }
+    history.forEach((m) => addBubble(m.role, m.text));
+  };
+  const showTyping = () => {
+    hideTyping();
+    typingNode = document.createElement("div");
+    typingNode.className = "task-chat-thinking";
+    typingNode.innerHTML = '<span class="task-chat-dot"></span><span class="task-chat-dot"></span><span class="task-chat-dot"></span><span class="muted">Ollama обрабатывает запрос...</span>';
+    list.appendChild(typingNode);
+    list.scrollTop = list.scrollHeight;
+  };
+  const hideTyping = () => {
+    if (typingNode && typingNode.parentNode) typingNode.parentNode.removeChild(typingNode);
+    typingNode = null;
+  };
+  render();
+
+  clearBtn?.addEventListener("click", () => {
+    localStorage.removeItem(storageKey);
+    render();
+  });
+
+  document.querySelectorAll(".task-chat-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      input.value = btn.dataset.q || "";
+      input.focus();
+    });
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = (input.value || "").trim();
+    if (!q) return;
+    const history = readHistory();
+    history.push({ role: "user", text: q });
+    saveHistory(history);
+    render();
+    input.value = "";
+    sendBtn.disabled = true;
+    if (status) status.textContent = "Обработка...";
+    showTyping();
+
+    const askHelp = async (questionText) => {
+      const fd = new FormData(form);
+      fd.set("question", questionText);
+      const res = await fetch("/api/ai/task-help", { method: "POST", body: fd });
+      return res.json();
+    };
+    try {
+      const contextTail = history.slice(-6).map((m) => `${m.role === "user" ? "Ученик" : "Ollama"}: ${m.text}`).join("\n");
+      const contextualQuestion = `Контекст диалога:\n${contextTail}\n\nНовый вопрос ученика: ${q}`;
+      let data = await askHelp(contextualQuestion);
+      // Retry with short prompt: некоторые локальные модели хуже отвечают на длинный контекст.
+      if (!data.ok || !data.help || !(data.help.answer || "").trim()) {
+        data = await askHelp(q);
+      }
+      if (!data.ok || !data.help || !(data.help.answer || "").trim()) {
+        hideTyping();
+        history.push({ role: "ai", text: data.reason || "Ollama сейчас не отвечает. Проверьте, что модель запущена, и повторите." });
+        saveHistory(history);
+        render();
+        return;
+      }
+      const h = data.help;
+      hideTyping();
+      const stepsText = (h.steps || []).length ? `\nШаги:\n- ${(h.steps || []).join("\n- ")}` : "";
+      const modelText = h.model ? `\n\n[модель: ${h.model}]` : "";
+      history.push({ role: "ai", text: `${h.answer || "Готово."}${stepsText}${modelText}` });
+      saveHistory(history);
+      render();
+    } catch {
+      hideTyping();
+      history.push({ role: "ai", text: "Ошибка сети. Повторите попытку." });
+      saveHistory(history);
+      render();
+    } finally {
+      hideTyping();
+      sendBtn.disabled = false;
+      if (status) status.textContent = "";
+    }
+  });
+})();
+</script>
+{% else %}
+{% if ai_steps %}
+<section class="ai-card">
+  <h3>Пошаговый план</h3>
+  <p class="muted">AI разбил задачу на конкретные действия.</p>
+  <ol class="ai-steps">
+    {% for step in ai_steps %}
+    <li>{{ step }}</li>
+    {% endfor %}
+  </ol>
+</section>
+{% elif task.status.value != "done" %}
+<section class="ai-card" id="task-steps-empty">
+  <h3>Пошаговый план</h3>
+  <p class="muted">Шаги появятся после запроса — без автозагрузки при открытии страницы.</p>
+  <div class="cluster" style="gap:8px; flex-wrap:wrap;">
+    <button type="button" class="btn-secondary" id="task-decompose-btn">Построить шаги (Ollama)</button>
+    <span class="muted" id="task-decompose-status"></span>
+  </div>
+  <ol class="ai-steps" id="task-decompose-list" hidden></ol>
+</section>
+<script>
+(() => {
+  const btn = document.getElementById("task-decompose-btn");
+  const st = document.getElementById("task-decompose-status");
+  const list = document.getElementById("task-decompose-list");
+  if (!btn || !list) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    if (st) st.textContent = "Запрос к модели...";
+    try {
+      const fd = new FormData();
+      fd.append("subject", {{ task.subject|tojson }});
+      fd.append("description", {{ task.description|tojson }});
+      fd.append("complexity", {{ complexity|tojson }});
+      const res = await fetch("/api/ai/decompose-task", { method: "POST", body: fd });
+      const data = await res.json();
+      const steps = (data.result && data.result.steps) ? data.result.steps : [];
+      if (!data.ok || !steps.length) {
+        if (st) st.textContent = "Не удалось получить шаги. Проверьте Ollama.";
+        btn.disabled = false;
+        return;
+      }
+      list.innerHTML = steps.slice(0, 8).map((s) => `<li>${String(s).replace(/</g, "&lt;")}</li>`).join("");
+      list.hidden = false;
+      if (st) st.textContent = "";
+      const hint = document.querySelector("#task-steps-empty .muted");
+      if (hint) hint.style.display = "none";
+      btn.style.display = "none";
+    } catch {
+      if (st) st.textContent = "Ошибка сети.";
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
+
+<section class="card">
+  <h3>История изменений</h3>
+  <div class="task-list">
+    {% for item in progress_items %}
+    <article class="task-item">
+      <div class="task-top">
+        <p class="task-title">{{ status_label(item.status) }}</p>
+        <p class="task-meta">{{ item.updated_at }}</p>
+      </div>
+      <p class="muted">{{ item.comment or "Без комментария" }}</p>
+    </article>
+    {% else %}
+    <div class="empty">История пока пуста.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

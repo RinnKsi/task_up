@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero page-hero">
+  <h2>Центр уведомлений</h2>
+  <p>Все напоминания в одном месте: по задачам, дедлайнам и эскалациям.</p>
+</section>
+
+<section class="card">
+  <form method="get" class="row-form">
+    <select name="sent">
+      <option value="" {% if not sent_filter %}selected{% endif %}>Все</option>
+      <option value="no" {% if sent_filter == "no" %}selected{% endif %}>Не отправлены</option>
+      <option value="yes" {% if sent_filter == "yes" %}selected{% endif %}>Отправлены</option>
+    </select>
+    <button type="submit" class="btn-secondary">Фильтр</button>
+  </form>
+  {% if sent_filter == "yes" %}
+  <form action="/notifications/clear-read" method="post" class="inline-form" style="margin-bottom:10px;">
+    <button type="submit" class="btn-ghost">Удалить все прочитанные</button>
+  </form>
+  {% endif %}
+  <div class="task-list">
+    {% for r in reminders %}
+    <article class="task-item">
+      <div class="task-top">
+        <p class="task-title">Задача #{{ r.task_id }} · {{ r.channel }}</p>
+        <span class="pill {% if r.sent %}status-done{% else %}status-new{% endif %}">
+          {% if r.sent %}Отправлено{% else %}Ожидает{% endif %}
+        </span>
+      </div>
+      <p class="task-meta">{{ r.message }}</p>
+      <p class="task-meta">Запланировано: {{ r.scheduled_at }}{% if r.sent_at %} · Отправлено: {{ r.sent_at }}{% endif %}</p>
+      <div class="task-actions">
+        <form action="/notifications/{{ r.id }}/delete" method="post">
+          <button type="submit" class="btn-ghost">Удалить</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">🔔</div>
+      <h4>Пока пусто</h4>
+      <p>Когда система создаст напоминания, они появятся здесь.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

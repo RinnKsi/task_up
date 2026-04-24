@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h2>Demo · Smart Tracker AI</h2>
+  <p>AI-first показ: хаотичный ввод → структурированная задача → шаги → умное напоминание → родительский инсайт → фокус-сессия.</p>
+</section>
+
+<section class="ai-card">
+  <h3>WOW-сценарий за 2 минуты <span class="ai-badge">AI pipeline</span></h3>
+  <ol class="ai-steps">
+    <li>Учитель диктует голосом/пишет: «по алгебре решить 123 и 124 до завтра».</li>
+    <li>AI извлекает предмет, заголовок, дедлайн, приоритет, сложность, тайминг, шаги и первый маленький шаг.</li>
+    <li>Ученику в кабинет и Telegram приходит задача + AI напоминание в выбранном тоне.</li>
+    <li>В dashboard ученика появляется urgency badge, AI-план, smart-план на вечер и Pomodoro с AI-коучем.</li>
+    <li>Родителю — мягкий инсайт, без токсичного контроля.</li>
+    <li>Если задача просрочена — AI генерирует поддерживающее напоминание, а не обвинения.</li>
+  </ol>
+</section>
+
+<section class="card">
+  <h3>Live showcase: сырой ввод → AI draft</h3>
+  <p class="muted">Вставьте любой «сырой» текст задания. В демо-режиме ответ приходит из <b>заглушки</b> (без вызова AI).</p>
+  <div class="row-form">
+    <select id="ingest-source">
+      <option value="text">TEXT</option>
+      <option value="photo">PHOTO (OCR path)</option>
+      <option value="voice">VOICE (STT path)</option>
+    </select>
+    <input id="ingest-input" type="text" value="По алгебре решить №123 и 124 до завтра, не забудь проверить ответы" />
+    <button id="run-ingest">AI draft</button>
+  </div>
+  <div id="live-draft" class="ai-card" style="display:none;">
+    <h3>AI draft</h3>
+    <div id="live-draft-body"></div>
+  </div>
+  <pre id="ingest-result" class="muted"></pre>
+</section>
+
+<section class="card">
+  <h3>Сценарий презентации</h3>
+  <p class="muted">Кнопки ниже вызывают только <b>демо-заглушки</b> (фиксированный JSON, без БД и без AI).</p>
+  <div class="row-form">
+    <button id="run-preflight" class="btn btn-ghost">Preflight-check</button>
+    <button id="run-demo">Автодемо (шаги 1-4)</button>
+    <button id="load-board" class="btn btn-ghost">Обновить demo-board</button>
+    <a href="/demo/open/teacher" class="btn btn-ghost">Кабинет учителя</a>
+    <a href="/demo/open/student" class="btn btn-ghost">Кабинет ученика</a>
+    <a href="/demo/open/parent" class="btn btn-ghost">Кабинет родителя</a>
+  </div>
+  <pre id="demo-result" class="muted"></pre>
+</section>
+
+<section class="card">
+  <h3>Demo-board для жюри</h3>
+  <p class="muted">KPI по AI, delivery и reminders.</p>
+  <pre id="board-result" class="muted"></pre>
+</section>
+
+<script>
+  const preflightBtn = document.getElementById("run-preflight");
+  const btn = document.getElementById("run-demo");
+  const boardBtn = document.getElementById("load-board");
+  const ingestBtn = document.getElementById("run-ingest");
+  const out = document.getElementById("demo-result");
+  const boardOut = document.getElementById("board-result");
+  const ingestOut = document.getElementById("ingest-result");
+  const liveDraft = document.getElementById("live-draft");
+  const liveDraftBody = document.getElementById("live-draft-body");
+
+  const withLoading = async (button, action) => {
+    button?.classList.add("loading");
+    button?.setAttribute("disabled", "true");
+    try {
+      await action();
+    } finally {
+      button?.classList.remove("loading");
+      button?.removeAttribute("disabled");
+    }
+  };
+
+  preflightBtn?.addEventListener("click", async () => {
+    await withLoading(preflightBtn, async () => {
+      const res = await fetch("/api/demo/preflight");
+      out.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+  });
+
+  btn?.addEventListener("click", async () => {
+    await withLoading(btn, async () => {
+      const res = await fetch("/api/demo/run", { method: "POST" });
+      out.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+  });
+
+  boardBtn?.addEventListener("click", async () => {
+    await withLoading(boardBtn, async () => {
+      const res = await fetch("/api/demo/board");
+      boardOut.textContent = JSON.stringify(await res.json(), null, 2);
+    });
+  });
+
+  const renderDraft = (draft) => {
+    if (!draft) {
+      liveDraft.style.display = "none";
+      return;
+    }
+    liveDraft.style.display = "block";
+    const tags = (draft.tags || []).map(t => `<span class="ai-chip">#${t}</span>`).join(" ");
+    const steps = (draft.steps || []).map(s => `<li>${s}</li>`).join("");
+    liveDraftBody.innerHTML = `
+      <p class="muted">Модель: ${draft.model || "unknown"}</p>
+      <p><b>Предмет:</b> ${draft.subject || "—"} &nbsp; <b>Заголовок:</b> ${draft.title || "—"}</p>
+      <p><b>Описание:</b> ${draft.description || "—"}</p>
+      <p><b>Дедлайн:</b> ${draft.due_at || "—"}</p>
+      <div class="ai-suggestion-meta">
+        <span><b>Приоритет:</b> ${draft.priority || "medium"}</span>
+        <span><b>Оценка:</b> ${draft.estimated_time || "—"} мин</span>
+        <span><b>Сложность:</b> ${draft.complexity || "medium"}</span>
+        <span><b>Confidence:</b> ${Math.round((draft.confidence || 0) * 100)}%</span>
+      </div>
+      <p><b>Первый шаг:</b> ${draft.recommended_first_step || "—"}</p>
+      <div>${tags}</div>
+      ${steps ? `<h4 style="margin-top:10px;">Шаги</h4><ol class="ai-steps">${steps}</ol>` : ""}
+    `;
+  };
+
+  ingestBtn?.addEventListener("click", async () => {
+    await withLoading(ingestBtn, async () => {
+      const source = document.getElementById("ingest-source")?.value || "text";
+      const raw = document.getElementById("ingest-input")?.value || "";
+      const res = await fetch(`/api/demo/ingest-preview?source_type=${encodeURIComponent(source)}&raw_input=${encodeURIComponent(raw)}`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      renderDraft(data?.draft);
+      ingestOut.textContent = JSON.stringify(data, null, 2);
+    });
+  });
+</script>
+{% endblock %}

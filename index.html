@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not current_user %}
+<section class="landing-hero">
+  <span class="eyebrow">✦ AI-first EdTech · Умный учебный помощник</span>
+  <h1>Превратите хаос заданий<br>в <span class="grad">понятный план действий</span></h1>
+  <p class="lead">
+    Smart Tracker AI принимает задание голосом, фото или текстом — и готовит учителю «магический предпросмотр»:
+    структуру, дедлайн, сложность, шаги выполнения и предупреждение о перегрузе. Ученик получает задачу
+    с первым шагом, родитель — мягкий инсайт без давления.
+  </p>
+  <div class="cta-row">
+    <a href="/register" class="btn">Начать бесплатно</a>
+    <a href="/login" class="btn-ghost">Войти</a>
+  </div>
+  <div class="trust">
+    <span><b>3 роли</b> в одной системе</span>
+    <span><b>AI preview</b> до создания задачи</span>
+    <span><b>Telegram</b> как канал уведомлений</span>
+    <span><b>Focus Mode</b> и Pomodoro с AI</span>
+  </div>
+</section>
+
+<section class="landing-stats">
+  <div class="landing-stat"><div class="num">3×</div><div class="label">быстрее ввод задачи для учителя</div></div>
+  <div class="landing-stat"><div class="num">–40%</div><div class="label">просрочек у учеников</div></div>
+  <div class="landing-stat"><div class="num">9</div><div class="label">AI-функций в одном продукте</div></div>
+  <div class="landing-stat"><div class="num">100%</div><div class="label">приватно и по вашим правилам</div></div>
+</section>
+
+<section style="margin-top: var(--sp-6);">
+  <h2 style="font-family: var(--font-display); letter-spacing: -0.01em;">Для каждой роли — свой фокус</h2>
+  <div class="role-grid">
+    <article class="role-card">
+      <div class="role-icon">С</div>
+      <h3>Ученик</h3>
+      <p class="muted">Понятный следующий шаг, фокус-режим, мягкое AI-напоминание по тону.</p>
+      <ul>
+        <li>Что делать прямо сейчас</li>
+        <li>Pomodoro + AI-коуч</li>
+        <li>Прогресс недели и стрики</li>
+      </ul>
+    </article>
+    <article class="role-card">
+      <div class="role-icon">Р</div>
+      <h3>Родитель</h3>
+      <p class="muted">Мягкие инсайты и дружелюбные рекомендации — без токсичного контроля.</p>
+      <ul>
+        <li>Тёплые, уважительные подсказки</li>
+        <li>Ранние сигналы о рисках</li>
+        <li>Как поддержать ребёнка</li>
+      </ul>
+    </article>
+    <article class="role-card">
+      <div class="role-icon">У</div>
+      <h3>Учитель</h3>
+      <p class="muted">Smart Create: текст/фото/голос → AI preview → выдать задание.</p>
+      <ul>
+        <li>Улучшение формулировки</li>
+        <li>Предупреждение о перегрузе</li>
+        <li>Проверка дедлайна AI</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section style="margin-top: var(--sp-6);">
+  <h2 style="font-family: var(--font-display); letter-spacing: -0.01em;">Как это работает</h2>
+  <div class="how-grid">
+    <div class="how-step"><div class="step-num">01</div><h4>Ввод</h4><p>Текст, фото с доски или голосовая заметка. Один экран — три источника.</p></div>
+    <div class="how-step"><div class="step-num">02</div><h4>AI Preview</h4><p>Предмет, дедлайн, приоритет, шаги, предупреждения о перегрузе.</p></div>
+    <div class="how-step"><div class="step-num">03</div><h4>Выдать</h4><p>Одна кнопка — задача уходит ученику, в Telegram и на сайт.</p></div>
+    <div class="how-step"><div class="step-num">04</div><h4>Сопровождение</h4><p>Напоминания, фокус, инсайты для родителя и отчёт для учителя.</p></div>
+  </div>
+</section>
+
+<section style="margin-top: var(--sp-6);">
+  <div class="card">
+    <h3>Почему это уровень победителя</h3>
+    <div class="landing-grid" style="margin-top: var(--sp-3);">
+      <div class="feature-card"><div class="feature-icon">AI</div><h3>Магический предпросмотр</h3><p class="muted">AI не просто создаёт — он помогает учителю сформулировать задачу лучше.</p></div>
+      <div class="feature-card"><div class="feature-icon">UX</div><h3>Ролевой интерфейс</h3><p class="muted">У каждой роли свой приоритет информации и свой тон AI.</p></div>
+      <div class="feature-card"><div class="feature-icon">A11y</div><h3>Доступность</h3><p class="muted">Три полноценные темы: Light, Dark, High Contrast — для всех учеников.</p></div>
+      <div class="feature-card"><div class="feature-icon">TG</div><h3>Telegram</h3><p class="muted">Привычный канал: 2FA, уведомления, голос, задачи.</p></div>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="hero page-hero">
+  <h2>Панель управления</h2>
+  {% if current_user.role.value == "teacher" %}
+  <p>Приглашайте учеников по логину, открывайте кабинет учителя для выдачи заданий и рейтинга. Лента «чужих» задач здесь не показывается.</p>
+  {% else %}
+  <p>Сводка по задачам и быстрый доступ к разделам.</p>
+  {% endif %}
+</section>
+{% if current_user.role.value != "teacher" %}
+<section class="card">
+  <h3 class="sr-only">Сводка</h3>
+  <div class="kpi-grid">
+    <div class="card"><div class="metric">{{ stats.total }}</div><div class="muted">Всего задач</div></div>
+    <div class="card"><div class="metric">{{ stats.done }}</div><div class="muted">Выполнено</div></div>
+    <div class="card"><div class="metric">{{ stats.overdue }}</div><div class="muted">Просрочено</div></div>
+  </div>
+</section>
+{% endif %}
+{% if current_user.role.value == "teacher" %}
+<section class="card">
+  <h3>Мои ученики (до {{ roster_max }})</h3>
+  {% if roster_flash_ok %}<p class="muted" style="color: var(--success-ink, #166534); margin-top:0;"><b>{{ roster_flash_ok }}</b></p>{% endif %}
+  {% if roster_flash_err %}<p class="error" style="margin-top:0;">{{ roster_flash_err }}</p>{% endif %}
+  {% if roster_rm_ok %}<p class="muted" style="color: var(--success-ink, #166534); margin-top:0;"><b>Ученик убран из списка.</b></p>{% endif %}
+  <p class="muted">Введите <b>логин ученика</b> — ему уйдёт запрос (Telegram/почта). Код привязки к боту не нужен. После подтверждения в «Настройки» → «Запросы от учителей» ученик появится в списке (до {{ roster_max }}). <a href="/teacher/ratings">Рейтинг</a> строится по подтверждённым.{% if telegram_bot_url %} Чтобы ученики видели задания в Telegram, дайте им ссылку на бота: <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">открыть в Telegram</a> (привязка — в «Настройки» → «Telegram»).{% endif %}</p>
+  <form action="/teacher/roster/add" method="post" class="row-form" style="flex-wrap: wrap; gap: var(--sp-3); align-items: flex-end; margin-top: var(--sp-3);">
+    <label class="settings-field" style="min-width:200px;">
+      <span>Логин ученика</span>
+      <input type="text" name="student_username" placeholder="ivan_petrov" autocomplete="off" required>
+    </label>
+    <button type="submit" class="btn" {% if roster_students|length >= roster_max %}disabled title="Уже {{ roster_max }} подтверждённых учеников"{% endif %}>Отправить запрос</button>
+  </form>
+  <p class="muted" style="margin: var(--sp-2) 0 0;">Подтверждено в списке: <b>{{ roster_students|length }}</b> / {{ roster_max }}</p>
+  {% if roster_pending_out %}
+  <p class="muted" style="margin: var(--sp-3) 0 0;"><b>Ждём ученика:</b></p>
+  <ul style="margin:0; padding-left: 1.2rem;">
+    {% for row, st in roster_pending_out %}
+    <li>{% if st %}@{{ st.username }} — {{ st.full_name }}{% else %}ID {{ row.student_id }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if roster_students %}
+  <ul style="margin: var(--sp-3) 0 0; padding-left: 1.2rem;">
+    {% for s in roster_students %}
+    <li style="margin-bottom: var(--sp-2);">
+      <b>{{ s.full_name }}</b> · @{{ s.username }}
+      <form action="/teacher/roster/remove" method="post" class="inline-form" style="display:inline; margin-left:8px;">
+        <input type="hidden" name="student_id" value="{{ s.id }}">
+        <button type="submit" class="btn-secondary" style="padding:2px 10px; font-size:0.85rem;">Убрать</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h3>Быстрые действия</h3>
+  <p class="muted">Откройте рабочий кабинет по роли и продолжайте учебный процесс.</p>
+  <div class="task-actions">
+    {% if current_user.role.value == "teacher" %}
+      <a href="/teacher" class="btn">Кабинет учителя</a>
+      <a href="/teacher/ratings" class="btn btn-ghost">Рейтинг класса</a>
+    {% elif current_user.role.value == "student" %}
+      <a href="/student/{{ current_user.id }}" class="btn">Кабинет ученика</a>
+    {% elif current_user.role.value == "parent" %}
+      <a href="/parent/{{ current_user.id }}" class="btn">Кабинет родителя</a>
+      <a href="/parent/{{ current_user.id }}/connect" class="btn btn-ghost">Мой ребёнок</a>
+    {% endif %}
+    <a href="/notifications" class="btn btn-ghost">Уведомления</a>
+  </div>
+</section>
+{% if current_user.role.value != "teacher" %}
+<section class="card">
+  <h3>Актуальные задачи</h3>
+  <div class="task-list">
+    {% for task in tasks[:6] %}
+    <article class="task-item">
+      <div class="task-top">
+        <div>
+          <p class="task-title">{{ task.subject }}</p>
+          <p class="task-meta">{{ task.description }}</p>
+        </div>
+        <span class="pill status-{{ task.status.value }}">{{ task.status.value }}</span>
+      </div>
+      <p class="task-meta">Дедлайн: {{ task.due_at }}</p>
+      <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Открыть</a>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">✨</div>
+      <h4>Начните с первой задачи</h4>
+      <p>Войдите как ученик или родитель — и соберите учёбу в одном месте.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

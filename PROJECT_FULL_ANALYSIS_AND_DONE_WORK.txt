@@ -1,0 +1,160 @@
+Smart Tracker AI - полный анализ проекта и что сделано
+Дата: 2026-04-22
+
+1. Цель проекта
+- Smart Tracker AI - учебный EdTech-помощник для 3 ролей:
+  - учитель: быстро создать и назначить задачи
+  - ученик: понять что делать сейчас и довести до выполнения
+  - родитель: видеть риск и прогресс
+- Каналы:
+  - Web (FastAPI + Jinja2)
+  - Telegram bot (aiogram)
+  - AI слой (provider-based: OpenAI / Ollama)
+
+2. Что реализовано в архитектуре
+- Бэкенд-каркас:
+  - FastAPI приложение, роуты web/auth/api
+  - Session-based auth + role access
+  - SQLAlchemy ORM + Alembic migrations
+  - APScheduler для фоновых задач/просрочек
+- Основные модели:
+  - users
+  - tasks
+  - progress
+  - reminders
+  - user_preferences
+  - student_parent_links
+- Роли:
+  - teacher
+  - student
+  - parent
+
+3. Что реализовано по бизнес-функционалу
+- Регистрация, логин, сессии, logout
+- Email verification (SMTP) + fallback режим
+- Telegram 2FA при логине (для привязанных аккаунтов)
+- Профиль:
+  - смена класса (только ученик)
+  - смена email
+  - удаление аккаунта
+  - Telegram link/unlink
+- Связка ученик-родитель:
+  - запрос от ученика
+  - подтверждение/отклонение родителем
+  - статусы pending/confirmed/rejected
+- Учитель:
+  - создание задач текстом
+  - фильтры и управление статусами
+  - выдача по классу:
+    - всему классу
+    - конкретному ученику
+- Ученик:
+  - dashboard + next action
+  - self-task на сайте
+  - pomodoro + дедлайн-индикаторы
+- Родитель:
+  - risk-first dashboard
+  - overdue/attention списки
+
+4. AI слой (что сделано)
+- Введена provider-абстракция:
+  - BaseAIProvider
+  - OpenAIProvider
+  - OllamaProvider
+  - factory выбора по AI_PROVIDER
+- Центр AI-логики:
+  - app/services/ai_gateway.py
+- Реализованные AI-сценарии:
+  - parse_task_draft
+  - decompose_task
+  - generate_reminder
+  - generate_progress_insight
+  - transcribe_voice
+- Endpoint’ы:
+  - /api/ai/parse-draft
+  - /api/ai/ingest-preview
+  - /api/ai/decompose-task
+  - /api/ai/progress-insight
+  - /api/ai/transcribe-voice
+- Безопасная деградация:
+  - при ошибке AI не роняется web/API flow
+  - есть rule-based fallback
+
+5. Telegram bot - текущее состояние
+- Команды:
+  - /start
+  - /help
+  - /tasks
+  - /link <code>
+  - /newtask
+- Голосовой сценарий:
+  - teacher: voice -> STT -> AI parse -> уточнения -> создание задач на сайт
+  - student: voice -> STT -> self-task + дедлайн-уточнение при необходимости
+- Добавлены inline-кнопки:
+  - для подтверждения teacher-flow
+  - для выбора режима class/single
+  - для быстрых дедлайнов student-flow
+
+6. Голосовой ввод в Web - текущее состояние
+- Реализован file upload voice transcription.
+- Реализован microphone capture через MediaRecorder:
+  - start/stop запись
+  - отправка blob на /api/ai/transcribe-voice
+  - автозаполнение текста задачи
+- Добавлены UX-индикаторы:
+  - статус микрофона
+  - таймер записи
+- Работает на:
+  - teacher form
+  - student self-task form
+
+7. Напоминания и антипрокрастинация
+- Reminder policy + overdue automation
+- AI reminders для родителя
+- AI reminders для ученика (с учетом anti_procrastination_mode)
+- Автопривязка родителя в self-task ученика при confirmed link
+
+8. Демо и конкурсная упаковка
+- Demo сценарий и demo endpoints:
+  - /api/demo/run
+  - /api/demo/acceptance
+  - /api/demo/preflight
+  - /api/demo/board
+- Добавлен wow/demo narrative:
+  - value hook
+  - evidence board
+  - KPI/acceptance checks
+
+9. Что уже проверено
+- Python compile checks (compileall) проходили успешно после ключевых итераций.
+- Lints по измененным файлам проходили без ошибок.
+- В логах uvicorn подтверждены успешные POST на /api/ai/transcribe-voice (200 OK).
+
+10. Текущие ограничения/блокеры
+- Главный активный блокер голоса сейчас обычно не кодовый, а конфигурационный/сетевой:
+  1) В .env может отсутствовать OPENAI_API_KEY и AI_PROVIDER=openai.
+  2) Telegram polling может падать из-за сети до api.telegram.org (timeout/connector error).
+- Для распознавания речи в OpenAI добавлен отдельный transcribe model config:
+  - OPENAI_TRANSCRIBE_MODEL=whisper-1
+
+11. Что обязательно должно быть в .env для AI voice
+- AI_PROVIDER=openai
+- OPENAI_API_KEY=<valid key>
+- OPENAI_MODEL=gpt-4o-mini
+- OPENAI_TRANSCRIBE_MODEL=whisper-1
+- OPENAI_TIMEOUT=12
+- OPENAI_TEMPERATURE=0.2
+- OPENAI_MAX_OUTPUT_TOKENS=500
+- OPENAI_RETRY_COUNT=2
+
+12. Краткая оценка готовности
+- Проект находится в рабочем MVP+ состоянии с расширенным функционалом.
+- Ключевые контуры готовы:
+  - web
+  - bot
+  - role flows
+  - AI provider layer
+  - demo track
+- Основные риски перед стабильным показом:
+  - внешняя сеть для Telegram
+  - корректная настройка AI env-переменных на машине запуска.

@@ -1,0 +1,493 @@
+{% extends "base.html" %}
+{% block content %}
+{% set prefs = current_user.preferences %}
+{% set saved = request.query_params.get("saved") %}
+
+<section class="hero page-hero">
+  <h2>Настройки и безопасность</h2>
+  <p>Профиль, Telegram, уведомления и параметры безопасности.</p>
+</section>
+
+{% if saved %}
+<section class="card toast-success">
+  <p><b>Готово:</b> настройки сохранены.</p>
+</section>
+{% endif %}
+{% if request.query_params.get("success") == "invite_decided" %}
+<section class="card toast-success">
+  <p><b>Готово:</b> решение по запросу родителя сохранено.</p>
+</section>
+{% endif %}
+{% if request.query_params.get("error") == "bad_invite" %}
+<section class="card" style="border-color: var(--warning-500, #ca8a04);">
+  <p>Запрос недоступен или устарел.</p>
+</section>
+{% endif %}
+{% if request.query_params.get("error") == "teacher_full" %}
+<section class="card" style="border-color: var(--warning-500, #ca8a04);">
+  <p>У этого учителя уже максимум учеников в списке — сейчас нельзя подтвердить приглашение.</p>
+</section>
+{% endif %}
+{% if request.query_params.get("success") == "teacher_invite_decided" %}
+<section class="card toast-success">
+  <p><b>Готово:</b> решение по запросу учителя сохранено.</p>
+</section>
+{% endif %}
+
+{# ============================================================================
+   1. Генерация кода + привязка родителя (вверху)
+   ============================================================================ #}
+<section class="card">
+  <h3 class="settings-section-title">Telegram <span class="hint">Уведомления и 2FA</span></h3>
+  {% if telegram_bot_url %}
+  <p class="muted">Чат с ботом: <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">открыть в Telegram</a>.</p>
+  {% endif %}
+  {% if message %}<p class="muted">{{ message }}</p>{% endif %}
+  {% if generated_code %}
+    <p><b>Код привязки:</b> <code style="background:var(--surface-inset);padding:4px 8px;border-radius:6px;">{{ generated_code }}</code></p>
+    <p class="muted">{% if telegram_bot_url %}В чате с ботом {% else %}Отправьте боту {% endif %}команду: <code>/link {{ generated_code }}</code></p>
+  {% endif %}
+  <div class="cluster">
+    <form action="/profile/security/telegram/link" method="post" class="inline-form">
+      <button type="submit" class="btn-secondary">Сгенерировать код привязки</button>
+    </form>
+    {% if current_user.telegram_chat_id %}
+    <form action="/profile/security/telegram/unlink" method="post" class="inline-form">
+      <button type="submit" class="warn">Отвязать Telegram</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if current_user.role.value == "student" %}
+<section class="card">
+  <div class="settings-parent-header cluster">
+    <h3 class="settings-section-title" style="margin:0;">Привязка родителя <span class="hint">Родитель увидит ваш прогресс</span></h3>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+  <form action="/profile/security/student-parent/request" method="post" class="row-form">
+    <input type="text" name="parent_username" required placeholder="Логин родителя" style="max-width:240px;">
+    <button type="submit">Отправить запрос</button>
+  </form>
+  {% if telegram_bot_url %}
+  <p class="muted" style="margin-top: var(--sp-3);">Родителю для уведомлений в Telegram: пусть откроет <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">бота</a> и в «Настройки» сгенерирует код привязки.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if current_user.role.value == "student" and pending_teacher_invites %}
+<section class="card">
+  <div class="settings-parent-header cluster">
+    <h3 class="settings-section-title" style="margin:0;">Запросы от учителей <span class="hint">Подтвердите, чтобы учитель видел вас в своём списке</span></h3>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+  {% for link in pending_teacher_invites %}
+  {% set tch = link_teachers.get(link.teacher_id) %}
+  <article class="task-item">
+    <p>
+      {% if tch %}<b>{{ tch.full_name }}</b> · @{{ tch.username }}{% else %}Учитель ID {{ link.teacher_id }}{% endif %}
+      хочет добавить вас в список для отчётов и рейтинга (код для Telegram-бота не нужен — это отдельная привязка).
+    </p>
+    <div class="task-actions">
+      <form action="/profile/security/teacher-roster/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="approve">
+        <button type="submit" class="btn-success">Подтвердить</button>
+      </form>
+      <form action="/profile/security/teacher-roster/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="reject">
+        <button type="submit" class="warn">Отклонить</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if current_user.role.value == "student" and pending_parent_invites %}
+<section class="card">
+  <div class="settings-parent-header cluster">
+    <h3 class="settings-section-title" style="margin:0;">Запросы от родителей <span class="hint">Подтвердите привязку</span></h3>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+  {% for link in pending_parent_invites %}
+  {% set par = link_parents.get(link.parent_id) %}
+  <article class="task-item">
+    <p>
+      {% if par %}<b>{{ par.full_name }}</b> · @{{ par.username }}{% else %}Родитель ID {{ link.parent_id }}{% endif %}
+      хочет видеть ваши задачи и прогресс.
+    </p>
+    <div class="task-actions">
+      <form action="/profile/security/student-parent/parent-invite/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="approve">
+        <button type="submit" class="btn-success">Подтвердить</button>
+      </form>
+      <form action="/profile/security/student-parent/parent-invite/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="reject">
+        <button type="submit" class="warn">Отклонить</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if current_user.role.value == "parent" and pending_links %}
+<section class="card">
+  <div class="settings-parent-header cluster">
+    <h3 class="settings-section-title" style="margin:0;">Ученик просит привязку <span class="hint">Ваше решение</span></h3>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+  {% for link in pending_links %}
+  {% set st = link_students.get(link.student_id) %}
+  <article class="task-item">
+    <p>
+      {% if st %}<b>{{ st.full_name }}</b> · @{{ st.username }}{% else %}Ученик ID {{ link.student_id }}{% endif %}
+    </p>
+    <div class="task-actions">
+      <form action="/profile/security/student-parent/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="approve">
+        <button type="submit" class="btn-success">Подтвердить</button>
+      </form>
+      <form action="/profile/security/student-parent/{{ link.id }}/decision" method="post">
+        <input type="hidden" name="decision" value="reject">
+        <button type="submit" class="warn">Отклонить</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if current_user.role.value == "parent" and pending_links_wait_student %}
+<section class="card">
+  <div class="settings-parent-header cluster">
+    <h3 class="settings-section-title" style="margin:0;">Ждём ученика <span class="hint">Вы отправили запрос</span></h3>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+  <p class="muted">Ученик должен зайти в настройки и подтвердить привязку. Страница «Мой ребёнок» в меню — там же сводка после подтверждения.</p>
+  <ul style="margin:0; padding-left: 1.2rem;">
+    {% for link in pending_links_wait_student %}
+    {% set st = link_students.get(link.student_id) %}
+    <li>{% if st %}@{{ st.username }} — {{ st.full_name }}{% else %}ID {{ link.student_id }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if current_user.role.value == "teacher" or (current_user.role.value == "parent" and not pending_links and not pending_links_wait_student) %}
+<section class="card settings-save-top">
+  <div class="settings-parent-header cluster">
+    <span class="muted" style="margin:0;">Тема, уведомления, расписание и AI</span>
+    <button type="submit" class="btn-secondary" form="settings-preferences-form">Сохранить настройки</button>
+  </div>
+</section>
+{% endif %}
+
+{# ============================================================================
+   2. Профиль
+   ============================================================================ #}
+<section class="card">
+  <h3 class="settings-section-title">Профиль <span class="hint">Ваш аккаунт и личные данные</span></h3>
+
+  <div class="settings-grid">
+    <div class="settings-field">
+      <span>Логин</span>
+      <div class="muted">{{ current_user.username }}</div>
+    </div>
+    <div class="settings-field">
+      <span>Email</span>
+      <div class="muted">{{ current_user.email }} {% if current_user.is_email_verified %}· подтверждён{% else %}· не подтверждён{% endif %}</div>
+    </div>
+    <div class="settings-field">
+      <span>Роль</span>
+      <div class="muted">{{ role_label }}</div>
+    </div>
+    <div class="settings-field">
+      <span>Telegram</span>
+      <div class="muted">{{ current_user.telegram_chat_id if current_user.telegram_chat_id else "Не привязан" }}</div>
+    </div>
+    {% if current_user.role.value == "student" %}
+    <div class="settings-field">
+      <span>Класс</span>
+      <div class="muted">{{ current_user.class_name if current_user.class_name else "Не указан" }}</div>
+    </div>
+    <div class="settings-field">
+      <span>Код для учителя</span>
+      <div class="muted">
+        {% if current_user.student_invite_code %}
+        <code style="background:var(--surface-inset); padding:4px 10px; border-radius:6px; font-size:1.1em;">{{ current_user.student_invite_code }}</code>
+        <span> — передайте вместе с логином, чтобы учитель добавил вас в список (до 10 человек).</span>
+        {% if telegram_bot_url %}
+        <span> Задачи в Telegram: <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">открыть бота</a>.</span>
+        {% endif %}
+        {% else %}—{% if telegram_bot_url %} <span>Бот: <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">открыть в Telegram</a>.</span>{% endif %}{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% if current_user.role.value == "teacher" and teacher_subject_labels %}
+    <div class="settings-field">
+      <span>Предметы</span>
+      <div class="muted">{{ teacher_subject_labels | join(", ") }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="profile-actions-grid">
+    {% if current_user.role.value == "student" %}
+    <form action="/profile/security/class" method="post" class="profile-action-cell">
+      <label class="sr-only" for="pa-class">Класс</label>
+      <input id="pa-class" type="text" name="class_name" value="{{ current_user.class_name if current_user.class_name else '' }}" placeholder="Например, 7Б">
+      <button type="submit" class="btn-secondary">Сменить класс</button>
+    </form>
+    {% endif %}
+    <form action="/profile/security/email/change" method="post" class="profile-action-cell">
+      <label class="sr-only" for="pa-email">Новый email</label>
+      <input id="pa-email" type="email" name="new_email" placeholder="Новый email" required>
+      <button type="submit" class="btn-secondary">Сменить email</button>
+    </form>
+  </div>
+</section>
+
+{# ============================================================================
+   Единая форма настроек
+   ============================================================================ #}
+<form id="settings-preferences-form" action="/profile/security/preferences" method="post">
+
+  {# ---------- Внешний вид ---------- #}
+  <section class="card">
+    <h3 class="settings-section-title">Внешний вид <span class="hint">Тема и плотность интерфейса</span></h3>
+
+    <div class="theme-picker" role="radiogroup" aria-label="Тема оформления">
+      {% set cur_theme = prefs.theme if prefs and prefs.theme else 'light' %}
+      {% for opt in [
+          ('light','Светлая','Чистая, современная, мягкая',['#4f46e5','#0ea5e9','#ffffff','#0f172a']),
+          ('dark','Тёмная','Глубокий фон, тонкие акценты',['#6366f1','#22d3ee','#111a2d','#e2e8f0']),
+          ('a11y','Контраст','Крупнее, максимальная читаемость',['#1d4ed8','#000000','#ffffff','#000000']),
+          ('system','Системная','Следует настройкам ОС',['#94a3b8','#475569','#f6f8fc','#0f172a'])
+      ] %}
+      <label class="theme-swatch {% if cur_theme == opt[0] %}is-selected{% endif %}">
+        <input type="radio" name="theme" value="{{ opt[0] }}" {% if cur_theme == opt[0] %}checked{% endif %}>
+        <div class="chip-row">
+          {% for c in opt[3] %}<span class="chip" style="background: {{ c }}"></span>{% endfor %}
+        </div>
+        <div class="name">{{ opt[1] }}</div>
+        <span class="desc">{{ opt[2] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="settings-grid" style="margin-top: 12px;">
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="accessibility_mode" {% if prefs and prefs.accessibility_mode %}checked{% endif %}>
+        <span>Режим доступности</span>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="ui_large_buttons" {% if prefs and prefs.ui_large_buttons %}checked{% endif %}>
+        <span>Крупные кнопки</span>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="ui_simplified" {% if prefs and prefs.ui_simplified %}checked{% endif %}>
+        <span>Упрощённый интерфейс</span>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="ui_high_contrast" {% if prefs and prefs.ui_high_contrast %}checked{% endif %}>
+        <span>Высокий контраст</span>
+      </label>
+    </div>
+    <div class="cluster" style="margin-top:12px;">
+      <span class="muted">Размер текста:</span>
+      <button type="button" class="btn-secondary" id="font-dec">A-</button>
+      <button type="button" class="btn-secondary" id="font-inc">A+</button>
+      <button type="button" class="btn-ghost" id="font-reset">Сброс</button>
+      <span class="muted" id="font-scale-label">100%</span>
+    </div>
+  </section>
+
+  {# ---------- AI ---------- #}
+  <section class="card">
+    <h3 class="settings-section-title">Ollama AI <span class="hint">Как помощник работает для вас</span></h3>
+    <div class="settings-grid">
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="ai_enabled" {% if not prefs or prefs.ai_enabled %}checked{% endif %}>
+        <span>Ollama AI включён</span>
+      </label>
+      <label class="settings-field">
+        <span>Стиль напоминаний</span>
+        <select name="reminder_tone">
+          {% for opt in [('soft','Мягкий'),('medium','Обычный'),('motivating','Мотивирующий'),('supportive','Поддерживающий'),('urgent','Срочный')] %}
+            <option value="{{ opt[0] }}" {% if prefs and prefs.reminder_tone == opt[0] %}selected{% elif not prefs and opt[0] == 'medium' %}selected{% endif %}>{{ opt[1] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="settings-field">
+        <span>Анти-прокрастинация</span>
+        <select name="anti_procrastination_mode">
+          <option value="soft" {% if prefs and prefs.anti_procrastination_mode == 'soft' %}selected{% endif %}>Мягкий</option>
+          <option value="balanced" {% if not prefs or prefs.anti_procrastination_mode == 'balanced' %}selected{% endif %}>Сбалансированный</option>
+          <option value="strict" {% if prefs and prefs.anti_procrastination_mode == 'strict' %}selected{% endif %}>Интенсивный</option>
+        </select>
+      </label>
+      <label class="settings-field">
+        <span>Режим планирования</span>
+        <select name="planning_mode">
+          <option value="light" {% if not prefs or prefs.planning_mode == 'light' %}selected{% endif %}>Лёгкий</option>
+          <option value="balanced" {% if prefs and prefs.planning_mode == 'balanced' %}selected{% endif %}>Сбалансированный</option>
+          <option value="deep" {% if prefs and prefs.planning_mode == 'deep' %}selected{% endif %}>Глубокий</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  {# ---------- Напоминания ---------- #}
+  <section class="card">
+    <h3 class="settings-section-title">Напоминания <span class="hint">Каналы и частота</span></h3>
+    <div class="settings-grid">
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="notify_telegram" {% if not prefs or prefs.notify_telegram %}checked{% endif %}>
+        <span>Telegram</span>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="notify_email" {% if not prefs or prefs.notify_email %}checked{% endif %}>
+        <span>Email</span>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="notify_web" {% if not prefs or prefs.notify_web %}checked{% endif %}>
+        <span>Веб-уведомления</span>
+      </label>
+      <label class="settings-field">
+        <span>Частота</span>
+        <select name="notify_frequency">
+          <option value="low" {% if prefs and prefs.notify_frequency == 'low' %}selected{% endif %}>Редко</option>
+          <option value="normal" {% if not prefs or prefs.notify_frequency == 'normal' %}selected{% endif %}>Обычно</option>
+          <option value="high" {% if prefs and prefs.notify_frequency == 'high' %}selected{% endif %}>Часто</option>
+        </select>
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="urgent_override_quiet" {% if not prefs or prefs.urgent_override_quiet %}checked{% endif %}>
+        <span>Срочные — даже в тихие часы</span>
+      </label>
+      <label class="settings-field">
+        <span>Тихие часы с</span>
+        <input type="time" name="quiet_hours_start" value="{{ prefs.quiet_hours_start if prefs else '22:00' }}">
+      </label>
+      <label class="settings-field">
+        <span>до</span>
+        <input type="time" name="quiet_hours_end" value="{{ prefs.quiet_hours_end if prefs else '07:00' }}">
+      </label>
+    </div>
+  </section>
+
+  {# ---------- Время ---------- #}
+  <section class="card">
+    <h3 class="settings-section-title">Время <span class="hint">Школа, репетитор, сон, лучший фокус</span></h3>
+    <div class="settings-grid">
+      <label class="settings-field">
+        <span>Школа с</span>
+        <input type="time" name="school_time_start" value="{{ prefs.school_time_start if prefs else '08:00' }}">
+      </label>
+      <label class="settings-field">
+        <span>до</span>
+        <input type="time" name="school_time_end" value="{{ prefs.school_time_end if prefs else '14:30' }}">
+      </label>
+      <label class="settings-field">
+        <span>Репетитор с</span>
+        <input type="time" name="tutor_time_start" value="{{ prefs.tutor_time_start if prefs else '' }}">
+      </label>
+      <label class="settings-field">
+        <span>до</span>
+        <input type="time" name="tutor_time_end" value="{{ prefs.tutor_time_end if prefs else '' }}">
+      </label>
+      <label class="settings-field">
+        <span>Сон с</span>
+        <input type="time" name="sleep_time_start" value="{{ prefs.sleep_time_start if prefs else '22:30' }}">
+      </label>
+      <label class="settings-field">
+        <span>до</span>
+        <input type="time" name="sleep_time_end" value="{{ prefs.sleep_time_end if prefs else '07:00' }}">
+      </label>
+      <label class="settings-field">
+        <span>Свободное время с</span>
+        <input type="time" name="free_time_start" value="{{ prefs.free_time_start if prefs else '16:00' }}">
+      </label>
+      <label class="settings-field">
+        <span>до</span>
+        <input type="time" name="free_time_end" value="{{ prefs.free_time_end if prefs else '20:00' }}">
+      </label>
+      <label class="settings-field">
+        <span>Лучшее время для задач</span>
+        <select name="best_focus_time">
+          <option value="morning" {% if prefs and prefs.best_focus_time == 'morning' %}selected{% endif %}>Утро</option>
+          <option value="afternoon" {% if prefs and prefs.best_focus_time == 'afternoon' %}selected{% endif %}>День</option>
+          <option value="evening" {% if not prefs or prefs.best_focus_time == 'evening' %}selected{% endif %}>Вечер</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  {# ---------- Focus mode ---------- #}
+  <section class="card">
+    <h3 class="settings-section-title">Focus mode <span class="hint">Pomodoro и автоповтор</span></h3>
+    <div class="settings-grid">
+      <label class="settings-field">
+        <span>Pomodoro, фокус (мин)</span>
+        <input type="number" name="pomodoro_focus_minutes" min="15" max="60" value="{{ prefs.pomodoro_focus_minutes if prefs else 25 }}">
+      </label>
+      <label class="settings-field">
+        <span>Pomodoro, перерыв (мин)</span>
+        <input type="number" name="pomodoro_break_minutes" min="3" max="20" value="{{ prefs.pomodoro_break_minutes if prefs else 5 }}">
+      </label>
+      <label class="settings-field settings-field-check">
+        <input type="checkbox" name="pomodoro_auto_repeat" {% if prefs and prefs.pomodoro_auto_repeat %}checked{% endif %}>
+        <span>Автоповтор циклов</span>
+      </label>
+    </div>
+  </section>
+
+</form>
+
+<section class="card delete-account-card">
+  <form action="/profile/security/delete-account" method="post" onsubmit="return confirm('Удалить аккаунт безвозвратно?');" class="delete-account-form">
+    <button type="submit" class="warn">Удалить аккаунт</button>
+  </form>
+</section>
+
+<script>
+  document.querySelectorAll(".theme-swatch input[type=radio]").forEach((el) => {
+    el.addEventListener("change", () => {
+      document.querySelectorAll(".theme-swatch").forEach((s) => s.classList.toggle("is-selected", s.contains(document.querySelector(".theme-swatch input[type=radio]:checked"))));
+      const value = document.querySelector(".theme-swatch input[type=radio]:checked")?.value;
+      if (value && window.SmartTrackerTheme) {
+        window.SmartTrackerTheme.set(value);
+      }
+    });
+  });
+
+  (() => {
+    if (!window.SmartTrackerTheme) return;
+    const dec = document.getElementById("font-dec");
+    const inc = document.getElementById("font-inc");
+    const reset = document.getElementById("font-reset");
+    const label = document.getElementById("font-scale-label");
+    const fmt = (n) => `${Math.round(n * 100)}%`;
+    const sync = () => {
+      const current = window.SmartTrackerTheme.getFontScale();
+      if (label) label.textContent = fmt(current);
+    };
+    dec?.addEventListener("click", () => {
+      const next = Math.max(0.85, window.SmartTrackerTheme.getFontScale() - 0.05);
+      window.SmartTrackerTheme.setFontScale(next);
+      sync();
+    });
+    inc?.addEventListener("click", () => {
+      const next = Math.min(1.35, window.SmartTrackerTheme.getFontScale() + 0.05);
+      window.SmartTrackerTheme.setFontScale(next);
+      sync();
+    });
+    reset?.addEventListener("click", () => {
+      window.SmartTrackerTheme.setFontScale(1);
+      sync();
+    });
+    sync();
+  })();
+</script>
+{% endblock %}

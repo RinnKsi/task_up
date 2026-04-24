@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-shell auth-split">
+  <aside class="auth-side">
+    <div>
+      <span class="ai-badge">Добро пожаловать</span>
+      <h2>Создайте аккаунт за минуту</h2>
+      <p class="muted">Выберите свою роль — ученик, родитель или учитель. Интерфейс и AI адаптируются под вас автоматически.</p>
+      <ul>
+        <li>Для ученика: фокус на «что делать сейчас»</li>
+        <li>Для родителя: мягкие инсайты и риски</li>
+        <li>Для учителя: Smart Create с AI preview</li>
+        <li>Email verification + Telegram 2FA</li>
+      </ul>
+    </div>
+    <p class="muted" style="margin:0;">Уже есть аккаунт? <a href="/login" style="color: var(--brand-600); font-weight: 700;">Войти</a></p>
+  </aside>
+  <div class="auth-form-wrap">
+    <div class="auth-card">
+      <h2>Регистрация</h2>
+      <p class="muted" style="margin-top: -4px;">Заполните данные — и попадёте в свой личный кабинет.</p>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      {% if success %}<p style="color: var(--success-ink);">{{ success }}</p>{% endif %}
+      {% if verify_link %}<p class="muted">Ссылка подтверждения: <a href="{{ verify_link }}">{{ verify_link }}</a></p>{% endif %}
+      <form action="/register" method="post">
+        <label class="settings-field"><span>ФИО</span><input type="text" name="full_name" required></label>
+        <div class="form-row">
+          <label class="settings-field"><span>Логин</span><input type="text" name="username" required autocomplete="username"></label>
+          <label class="settings-field"><span>Email</span><input type="email" name="email" required autocomplete="email"></label>
+        </div>
+        <label class="settings-field">
+          <span>Роль</span>
+          <select name="role" id="register-role" required>
+            <option value="student">Ученик</option>
+            <option value="parent">Родитель</option>
+            <option value="teacher">Учитель</option>
+          </select>
+        </label>
+        <div id="parent-child-row" class="settings-field" style="display:none;">
+          <span>Логин вашего ребёнка (ученика)</span>
+          <input type="text" name="child_username" placeholder="Такой же логин, как у ребёнка в Smart Tracker" autocomplete="off">
+          <p class="muted" style="margin: var(--sp-2) 0 0;">После подтверждения email и входа мы откроем шаг привязки: ребёнку придёт запрос в настройках.</p>
+        </div>
+        <div id="teacher-subjects-row" class="settings-field" style="display:none;">
+          <span>Предметы, которые преподаёте</span>
+          <p class="muted" style="margin: 0 0 var(--sp-2);">Отметьте хотя бы один предмет — так система лучше подстроит подсказки и отчёты.</p>
+          <div class="subject-check-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-2);">
+            {% for val, label in subject_choices|default([], true) %}
+            <label class="inline-check" style="display:flex; gap:8px; align-items:center; font-weight:500;">
+              <input type="checkbox" name="teacher_subjects" value="{{ val }}"> {{ label }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="settings-field"><span>Пароль</span><input type="password" name="password" required autocomplete="new-password"></label>
+          <label class="settings-field"><span>Повторите пароль</span><input type="password" name="password_confirm" required autocomplete="new-password"></label>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: var(--sp-3);">Создать аккаунт</button>
+      </form>
+    </div>
+  </div>
+</section>
+<script>
+(function () {
+  var sel = document.getElementById("register-role");
+  var rowParent = document.getElementById("parent-child-row");
+  var rowTeacher = document.getElementById("teacher-subjects-row");
+  if (!sel) return;
+  function sync() {
+    if (rowParent) rowParent.style.display = sel.value === "parent" ? "block" : "none";
+    if (rowTeacher) rowTeacher.style.display = sel.value === "teacher" ? "block" : "none";
+  }
+  sel.addEventListener("change", sync);
+  sync();
+})();
+</script>
+{% endblock %}

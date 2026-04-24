@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-shell auth-split">
+  <aside class="auth-side">
+    <div>
+      <span class="ai-badge">Smart Tracker AI</span>
+      <h2>С возвращением в умный учебный центр</h2>
+      <p class="muted">Продукт, который помогает учителю создавать задачи, ученику — их выполнять, родителю — поддерживать без давления.</p>
+      <ul>
+        <li>AI-предпросмотр задач до отправки</li>
+        <li>Focus Mode с коучингом</li>
+        <li>Telegram-уведомления и 2FA</li>
+        <li>3 темы: Light · Dark · Accessibility</li>
+      </ul>
+    </div>
+    <p class="muted" style="margin:0;">Нет аккаунта? <a href="/register" style="color: var(--brand-600); font-weight: 700;">Зарегистрироваться</a></p>
+  </aside>
+  <div class="auth-form-wrap">
+    <div class="auth-card">
+      <h2>Вход</h2>
+      <p class="muted" style="margin-top: -4px;">Войдите в свой аккаунт, чтобы продолжить.</p>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <form action="/login" method="post">
+        <label class="settings-field"><span>Логин</span><input name="username" type="text" required autocomplete="username"></label>
+        <label class="settings-field"><span>Пароль</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <div class="login-row" style="display:flex; align-items:center; justify-content:space-between; gap: 8px; margin-top: var(--sp-2);">
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size: 0.92rem;">
+            <input type="checkbox" name="remember_me" value="1">
+            <span>Запомнить меня</span>
+          </label>
+          <a href="/password/forgot" class="muted" style="font-size: 0.92rem;">Забыли пароль?</a>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: var(--sp-3);">Войти</button>
+      </form>
+      <p class="muted" style="margin-top: var(--sp-4);">Демо-доступы: учитель / ученик / родитель · пароль: <b>1234</b></p>
+    </div>
+  </div>
+</section>
+{% endblock %}

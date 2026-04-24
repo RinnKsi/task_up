@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero page-hero">
+  <h2>Успеваемость: рейтинг</h2>
+  <p>Сводка по ученикам из вашего списка на главной (до {{ roster_max }} человек). Оценка считается по задачам, которые вы им выдавали.</p>
+</section>
+
+{% if roster_count == 0 %}
+<section class="card">
+  <p class="muted">Пока никого нет в списке. На <a href="/">главной странице</a> добавьте учеников по логину и коду из их настроек.{% if telegram_bot_url %} Бот для учеников и уведомлений: <a href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">открыть в Telegram</a>.{% endif %}</p>
+</section>
+{% else %}
+<section class="card">
+  <p class="muted" style="margin-top:0;">В списке: <b>{{ roster_count }}</b> из {{ roster_max }}. Чем выше балл, тем стабильнее прогресс по вашим заданиям.</p>
+  <div class="task-list" style="margin-top: var(--sp-3);">
+    {% for row in rating_rows %}
+    <article class="task-item" style="border-left: 4px solid {% if row.rank == 1 %}var(--success-500, #22c55e){% elif row.rank == 2 %}var(--brand-500, #6366f1){% elif row.rank == 3 %}#c084fc{% else %}var(--surface-border, #e5e7eb){% endif %};">
+      <div class="task-top">
+        <div>
+          <p class="task-title">
+            <span class="metric" style="font-size:1.25rem; margin-right:8px;">#{{ row.rank }}</span>
+            {{ row.student.full_name }}
+            <span class="muted">@{{ row.student.username }}{% if row.student.class_name %} · {{ row.student.class_name }}{% endif %}</span>
+          </p>
+          <p class="task-meta">
+            Баллы: {{ row.points }} · выполнено {{ row.progress.completion_percent }}% · серия {{ row.progress.streak_days }} дн.
+            · просрочено: {{ row.progress.overdue }} · уровень {{ row.gamification.level }}
+          </p>
+          {% if row.gamification.badges %}
+          <p class="muted" style="margin: var(--sp-2) 0 0;">
+            {% for b in row.gamification.badges %}<span class="pill" style="margin-right:4px;">{{ b }}</span>{% endfor %}
+          </p>
+          {% endif %}
+        </div>
+        <div>
+          <span class="pill" style="font-weight:700;">Рейтинг: {{ row.rating_score }}</span>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

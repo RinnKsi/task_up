@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Демо-заглушка</h2>
+  <p>Раздел кабинета <b>{{ portal_label }}</b> в демо не перенаправляет в реальный интерфейс. Для работы с приложением войдите под учётной записью.</p>
+  <p class="muted">Демо-доступы на странице входа: учитель / ученик / родитель · пароль <b>1234</b> (если выполнен seed).</p>
+  <div class="row-form" style="margin-top: var(--sp-3);">
+    <a href="/login" class="btn">Вход</a>
+    <a href="/demo" class="btn btn-ghost">Назад к демо</a>
+  </div>
+</section>
+{% endblock %}

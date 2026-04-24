@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+jinja2
+sqlalchemy
+aiogram
+apscheduler
+pydantic-settings
+python-multipart
+itsdangerous
+alembic
+email-validator
+faster-whisper
+Pillow
+rapidocr-onnxruntime
+pytesseract
+opencv-python-headless

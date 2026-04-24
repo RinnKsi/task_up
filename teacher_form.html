@@ -1,0 +1,761 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro status_label(status) -%}
+  {%- if status == "new" -%}Новая
+  {%- elif status == "in_progress" -%}В работе
+  {%- elif status == "done" -%}Выполнена
+  {%- elif status == "overdue" -%}Просрочена
+  {%- else -%}{{ status }}
+  {%- endif -%}
+{%- endmacro %}
+
+<section class="hero">
+  <h2>Кабинет учителя</h2>
+  <p>Создайте задачу за 20 секунд: текст, фото или голос — Ollama превратит это в понятное задание с предпросмотром.</p>
+</section>
+
+{% if created_count and created_count > 0 %}
+<section class="card toast-success">
+  <p><b>Готово:</b> создано задач — {{ created_count }}.</p>
+</section>
+{% endif %}
+{% if bulk_changed and bulk_changed > 0 %}
+<section class="card toast-success">
+  <p><b>Bulk выполнен:</b> обновлено задач — {{ bulk_changed }}.</p>
+</section>
+{% endif %}
+
+<section class="kpi-grid">
+  <div class="card">
+    <div class="metric">{{ tasks|length }}</div>
+    <div class="muted">Задач в работе</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ completion_percent }}%</div>
+    <div class="muted">Выполнение по текущей выборке</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ tasks|selectattr('status.value','equalto','overdue')|list|length }}</div>
+    <div class="muted">Просроченные</div>
+  </div>
+</section>
+
+<section class="card">
+  <h3>Bulk действия по задачам</h3>
+  <p class="muted">Массово обновите статус задач по фильтру.</p>
+  <form action="/teacher/tasks/bulk" method="post" class="row-form">
+    <select name="action" required>
+      <option value="mark_overdue">Эскалировать (в просроченные)</option>
+      <option value="set_in_progress">Перевести новые в работу</option>
+    </select>
+    <select name="class_name">
+      <option value="">Все классы</option>
+      {% for class_name in class_names %}<option value="{{ class_name }}">{{ class_name }}</option>{% endfor %}
+    </select>
+    <select name="status_filter">
+      <option value="">Все статусы</option>
+      <option value="new">Новые</option>
+      <option value="in_progress">В работе</option>
+      <option value="overdue">Просроченные</option>
+    </select>
+    <button type="submit" class="btn-secondary">Выполнить bulk</button>
+  </form>
+  <p class="muted" style="margin-top:6px;">Сейчас: новых {{ bulk_stats.new }}, в работе {{ bulk_stats.in_progress }}, просроченных {{ bulk_stats.overdue }}.</p>
+</section>
+
+{# ============================================================================
+   Smart Create — unified AI ingest
+   ============================================================================ #}
+<section class="ingest-shell">
+  <div class="cluster" style="justify-content: space-between;">
+    <h2 style="margin:0;">Новое задание <span class="ai-badge">Ollama Smart Create</span></h2>
+    <span class="ingest-status" id="ingest-status">Готов к вводу</span>
+  </div>
+  <p class="muted">Введите текстом, загрузите фото или запишите голос — нейросеть анализирует ввод и может занять 3-15 секунд.</p>
+
+  <div class="ingest-tabs" role="tablist" aria-label="Способ ввода">
+    <button type="button" class="ingest-tab is-active" data-tab="text" role="tab" aria-selected="true">Текст</button>
+    <button type="button" class="ingest-tab" data-tab="photo" role="tab" aria-selected="false">Фото</button>
+    <button type="button" class="ingest-tab" data-tab="voice" role="tab" aria-selected="false">Голос</button>
+  </div>
+
+  <div class="ingest-pane is-active" data-pane="text">
+    <label>Текст задания</label>
+    <textarea id="ingest-text" rows="3" placeholder="Например: По алгебре решить №123 и 124 до завтра 19:00">По алгебре решить №123 и 124 до завтра</textarea>
+    <button type="button" id="ingest-text-btn" class="btn">Анализировать AI</button>
+  </div>
+
+  <div class="ingest-pane" data-pane="photo">
+    <label>Режим OCR</label>
+    <select id="ingest-photo-mode">
+      <option value="auto">Авто</option>
+      <option value="board">Доска/маркер</option>
+      <option value="math">Математика/формулы</option>
+    </select>
+    <label for="ingest-photo-file" class="ingest-dropzone" id="ingest-photo-drop">
+      <b>Перетащите фото задания сюда</b>
+      <div class="muted" style="margin-top:6px;">или нажмите, чтобы выбрать 1-3 файла (jpg/png/heic)</div>
+    </label>
+    <input id="ingest-photo-file" type="file" accept="image/*" multiple style="display:none;">
+    <p class="muted" id="ingest-photo-status" style="display:none;"></p>
+  </div>
+
+  <div class="ingest-pane" data-pane="voice">
+    <div class="cluster">
+      <button type="button" id="ingest-voice-start" class="btn">🎙 Начать запись</button>
+      <button type="button" id="ingest-voice-stop" class="btn-secondary" disabled>Стоп</button>
+      <label class="btn-secondary" for="ingest-voice-file">Загрузить файл</label>
+      <input id="ingest-voice-file" type="file" accept="audio/*" style="display:none;">
+      <button type="button" id="ingest-voice-health" class="btn-ghost">Проверить распознавание</button>
+    </div>
+    <p class="muted" id="ingest-voice-status">Разрешите доступ к микрофону или выберите файл.</p>
+    <p class="muted" id="ingest-voice-timer" style="display:none;">Запись: 0с</p>
+    <p class="muted" id="ingest-voice-health-out" style="display:none;"></p>
+    <div id="ingest-voice-fallback" style="display:none;" class="ai-card" style="margin-top:8px;">
+      <strong>Серверное распознавание недоступно.</strong>
+      <p class="muted" style="margin:4px 0 8px;">Можно продиктовать прямо в браузере — работает в Chrome/Edge.</p>
+      <button type="button" id="ingest-voice-browser" class="btn-secondary">🎧 Распознать браузером</button>
+      <p class="muted" id="ingest-voice-browser-out" style="margin-top:6px;"></p>
+    </div>
+  </div>
+
+  {# ---------- Magical Preview ---------- #}
+  <div class="ingest-preview" id="ingest-preview" aria-live="polite">
+    <div class="ingest-preview-head">
+      <div>
+        <span class="ai-badge">Ollama предпросмотр</span>
+        <h3 class="ingest-preview-title" id="pv-title">—</h3>
+        <p class="muted" id="pv-subject" style="margin-top:2px;">—</p>
+      </div>
+      <span id="pv-model" class="muted" style="font-size:var(--fs-xs);"></span>
+    </div>
+
+    <div id="pv-ai-status" class="assist-warning" style="display:none; margin: 8px 0;"></div>
+
+    <p id="pv-description">—</p>
+
+    {# Recognized text (only for photo/voice) #}
+    <details id="pv-recognized-wrap" style="margin:8px 0;">
+      <summary class="muted">Показать исходный распознанный текст</summary>
+      <pre id="pv-recognized" class="muted" style="white-space:pre-wrap; background:var(--surface-inset); padding:10px; border-radius:var(--radius-sm);"></pre>
+    </details>
+
+    <div class="ingest-preview-grid">
+      <div class="ingest-preview-field"><span class="label">Предмет</span><span class="value" id="pv-subject-val">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Дедлайн</span><span class="value" id="pv-due">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Приоритет</span><span class="value" id="pv-priority">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Сложность</span><span class="value" id="pv-complexity">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Оценка времени</span><span class="value" id="pv-est">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Уверенность AI</span><span class="value" id="pv-confidence">—</span></div>
+    </div>
+    <div class="ai-card" id="pv-deadline-analysis" style="display:none; margin-top:10px;">
+      <h4 style="margin:0 0 6px;">Ollama анализ дедлайна</h4>
+      <p class="muted" id="pv-deadline-analysis-text">—</p>
+      <p class="muted" id="pv-deadline-reco" style="display:none; margin-top:6px;"></p>
+      <button type="button" class="btn-secondary" id="pv-apply-deadline" style="display:none;">Применить рекомендуемый дедлайн</button>
+    </div>
+
+    <div id="pv-tags" class="stack-2" style="margin-top:10px;"></div>
+
+    <div class="first-step-card" id="pv-first-step-wrap" style="display:none;">
+      <h4>Первый шаг для ученика</h4>
+      <p id="pv-first-step">—</p>
+    </div>
+
+    <div id="pv-steps-wrap" style="display:none;">
+      <h4 style="margin:16px 0 6px;">Пошаговый план</h4>
+      <ol class="ai-steps" id="pv-steps"></ol>
+    </div>
+
+    <div id="pv-warnings"></div>
+
+    <div class="ai-card" id="pv-assist" style="display:none; margin-top:var(--sp-4);">
+      <h4 style="margin:0 0 6px;">Как ученик увидит задание</h4>
+      <p id="pv-student-preview" class="muted" style="margin:0;">—</p>
+      <p style="margin:8px 0 0;"><b>Рекомендация по назначению:</b> <span id="pv-assignment-hint">—</span></p>
+      <p style="margin:4px 0 0;"><b>Рекомендация по дедлайну:</b> <span id="pv-deadline-hint">—</span></p>
+    </div>
+
+    {# Publish form — заполняется из preview, но имеет живые контролы назначения #}
+    <form action="/teacher/tasks" method="post" id="publish-form" style="margin-top:var(--sp-5);">
+      <input type="hidden" name="text" id="publish-text">
+      <input type="hidden" name="source_type" id="publish-source" value="text">
+      <input type="hidden" name="client_draft_json" id="client-draft-json" value="">
+
+      <div class="settings-grid">
+        <label class="settings-field">
+          <span>Класс</span>
+          <select name="class_name" id="publish-class">
+            <option value="">Выберите класс</option>
+            {% for class_name in class_names %}<option value="{{ class_name }}">{{ class_name }}</option>{% endfor %}
+          </select>
+        </label>
+
+        <label class="settings-field">
+          <span>Кому выдать</span>
+          <select name="assignment_mode" id="publish-assignment">
+            <option value="class">Всему классу</option>
+            <option value="single">Конкретному ученику</option>
+          </select>
+        </label>
+
+        <label class="settings-field" id="publish-student-wrap" style="display:none;">
+          <span>Ученик</span>
+          <select name="student_id" id="publish-student">
+            <option value="">Выберите ученика</option>
+            {% for user in students %}<option value="{{ user.id }}" data-class="{{ user.class_name if user.class_name else '' }}">{{ user.full_name }}{% if user.class_name %} ({{ user.class_name }}){% endif %}</option>{% endfor %}
+          </select>
+        </label>
+
+        <label class="settings-field">
+          <span>Родитель (опционально)</span>
+          <select name="parent_id">
+            <option value="">Без родителя</option>
+            {% for user in parents %}<option value="{{ user.id }}">{{ user.full_name }}</option>{% endfor %}
+          </select>
+        </label>
+
+        <label class="settings-field">
+          <span>Дедлайн</span>
+          <input name="due_at" id="publish-due" type="datetime-local" required>
+        </label>
+      </div>
+
+      <div class="publish-bar">
+        <div class="publish-grow muted">Ollama подготовила задачу. Проверьте и выдайте классу или ученику.</div>
+        <button type="button" class="btn-secondary" id="pv-reset">Сбросить</button>
+        <button type="submit" class="btn-xl btn-success">✅ Выдать задание</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+{# ============================================================================
+   Existing tasks
+   ============================================================================ #}
+<section class="card">
+  <h2>Мои задачи</h2>
+  <form method="get" action="/teacher" class="row-form">
+    <select name="status">
+      <option value="">Все статусы</option>
+      <option value="new" {% if status_filter == "new" %}selected{% endif %}>Новые</option>
+      <option value="in_progress" {% if status_filter == "in_progress" %}selected{% endif %}>В работе</option>
+      <option value="done" {% if status_filter == "done" %}selected{% endif %}>Выполненные</option>
+      <option value="overdue" {% if status_filter == "overdue" %}selected{% endif %}>Просроченные</option>
+    </select>
+    <button type="submit" class="btn-secondary">Фильтр</button>
+  </form>
+  <div class="task-list">
+    {% for task in tasks %}
+    <article class="task-item">
+      <div class="task-top">
+        <div>
+          <p class="task-title">{{ task.subject }}</p>
+          <p class="task-meta">{{ task.description }}</p>
+        </div>
+        <span class="pill status-{{ task.status.value }}">{{ status_label(task.status.value) }}</span>
+      </div>
+      <p class="task-meta">Дедлайн: {{ task.due_at }}</p>
+      <p class="task-meta">Сложность по оценке Ollama: {{ complexity_percents.get(task.id, 0) }}%</p>
+      <div class="task-actions">
+        <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Карточка</a>
+        <form action="/tasks/{{ task.id }}/force-overdue" method="post">
+          <button type="submit" class="warn">Эскалировать</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📝</div>
+      <h4>Ещё ни одного задания</h4>
+      <p>Используйте форму выше — напишите текст, загрузите фото или продиктуйте голосом. AI соберёт preview и поможет с формулировкой.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card" id="hw-reco">
+  <h2>Рекомендации заданий <span class="ai-badge">Ollama</span></h2>
+  <p class="muted">Выберите класс (1–11). Подбор только по <b>вашим</b> предметам из профиля {% if teacher_subject_labels %}({{ teacher_subject_labels | join(", ") }}){% else %}— сначала укажите их в настройках{% endif %}. Чужие дисциплины не предлагаются. Не чаще 1 раза в ~55 с — без перегруза Ollama.</p>
+  {% if hw_error %}<p class="error">{{ hw_error }}</p>{% endif %}
+  <form action="/teacher/suggest-homework" method="post" class="row-form" style="flex-wrap:wrap; gap: var(--sp-3); align-items: flex-end;">
+    <label class="settings-field">
+      <span>Класс</span>
+      <select name="grade" required>
+        {% for g in range(1, 12) %}
+        <option value="{{ g }}" {% if hw_suggestions and hw_suggestions.grade == g %}selected{% elif not hw_suggestions and g == 5 %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn-secondary">Получить идеи</button>
+  </form>
+  {% if hw_suggestions and hw_suggestions.items %}
+  <p class="muted" style="margin-top: var(--sp-3);"><b>Класс {{ hw_suggestions.grade }}</b>{% if hw_suggestions.model %} · {{ hw_suggestions.model }}{% endif %}</p>
+  {% if hw_suggestions.note %}<p class="muted">{{ hw_suggestions.note }}</p>{% endif %}
+  <ul style="margin: var(--sp-3) 0 0; padding-left: 1.2rem;">
+    {% for it in hw_suggestions.items %}
+    <li style="margin-bottom: var(--sp-3);">
+      <strong>{{ it.subject }} — {{ it.title }}</strong>
+      <div class="muted" style="margin-top:4px;">{{ it.idea }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif hw_suggestions %}
+  <p class="muted" style="margin-top: var(--sp-3);">Пока нет пунктов — попробуйте ещё раз, когда Ollama будет доступна.</p>
+  {% endif %}
+</section>
+
+<script>
+(() => {
+  // =========================================================================
+  // Tabs
+  // =========================================================================
+  const tabs = document.querySelectorAll(".ingest-tab");
+  const panes = document.querySelectorAll(".ingest-pane");
+  tabs.forEach((t) => t.addEventListener("click", () => {
+    tabs.forEach((x) => { x.classList.remove("is-active"); x.setAttribute("aria-selected", "false"); });
+    panes.forEach((p) => p.classList.remove("is-active"));
+    t.classList.add("is-active");
+    t.setAttribute("aria-selected", "true");
+    document.querySelector(`[data-pane="${t.dataset.tab}"]`)?.classList.add("is-active");
+  }));
+
+  // =========================================================================
+  // Shared preview state
+  // =========================================================================
+  const status = document.getElementById("ingest-status");
+  const setStatus = (text, kind = "") => {
+    status.className = "ingest-status " + (kind ? `is-${kind}` : "");
+    status.textContent = text;
+  };
+
+  const preview = document.getElementById("ingest-preview");
+  let lastPreview = null;
+
+  const fmtDue = (iso) => {
+    if (!iso) return "не задан";
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return iso; }
+  };
+
+  const priorityLabel = (p) => ({low: "Низкий", medium: "Обычный", high: "Высокий", urgent: "Срочный"}[p] || "Обычный");
+  const complexityLabel = (c) => ({easy: "Лёгкая", medium: "Средняя", hard: "Сложная"}[c] || "Средняя");
+
+  const toLocalInput = (iso) => {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return ""; }
+  };
+
+  const renderPreview = (data) => {
+    lastPreview = data;
+    preview.classList.add("is-visible");
+
+    document.getElementById("pv-title").textContent = data.title || data.subject || "Задание";
+    document.getElementById("pv-subject").textContent = data.subject ? `Предмет: ${data.subject}` : "";
+    const aiStatusBox = document.getElementById("pv-ai-status");
+    if (aiStatusBox) {
+      if (data.ai_status && data.ai_status.used === false) {
+        aiStatusBox.style.display = "block";
+        aiStatusBox.innerHTML = `⚠ AI провайдер недоступен — использован локальный парсер.<br><span class="muted" style="font-size:12px;">${data.ai_status.reason || ""}</span>`;
+      } else {
+        aiStatusBox.style.display = "none";
+        aiStatusBox.textContent = "";
+      }
+    }
+    document.getElementById("pv-subject-val").textContent = data.subject || "—";
+    document.getElementById("pv-description").textContent = data.description || "—";
+    document.getElementById("pv-model").textContent = data.model ? `model: ${data.model}` : "";
+    document.getElementById("pv-due").textContent = fmtDue(data.due_at);
+    document.getElementById("pv-priority").textContent = priorityLabel(data.priority);
+    document.getElementById("pv-complexity").textContent = complexityLabel(data.complexity);
+    document.getElementById("pv-est").textContent = data.estimated_time ? `${data.estimated_time} мин` : "—";
+    document.getElementById("pv-confidence").textContent = `${Math.round((data.confidence || 0) * 100)}%`;
+    const da = document.getElementById("pv-deadline-analysis");
+    const daText = document.getElementById("pv-deadline-analysis-text");
+    if (data.deadline_analysis && data.deadline_analysis.resolved_due) {
+      da.style.display = "block";
+      const src = data.deadline_analysis.source || "ai";
+      const phrase = data.deadline_analysis.phrase || "неявная дата";
+      daText.textContent = `Фраза: "${phrase}". Источник: ${src}. Дедлайн выставлен как ${fmtDue(data.deadline_analysis.resolved_due)}.`;
+    } else {
+      da.style.display = "none";
+      daText.textContent = "";
+    }
+    const dueReco = document.getElementById("pv-deadline-reco");
+    const applyBtn = document.getElementById("pv-apply-deadline");
+    const recoIso = data.recommendations && data.recommendations.recommended_due_at;
+    if (recoIso) {
+      dueReco.style.display = "block";
+      dueReco.textContent = `Рекомендация Ollama: сдвинуть дедлайн до ${fmtDue(recoIso)}, чтобы снизить риск просрочки.`;
+      applyBtn.style.display = "inline-flex";
+      applyBtn.onclick = () => {
+        const local = toLocalInput(recoIso);
+        if (local) document.getElementById("publish-due").value = local;
+      };
+    } else {
+      dueReco.style.display = "none";
+      dueReco.textContent = "";
+      applyBtn.style.display = "none";
+      applyBtn.onclick = null;
+    }
+
+    const tagsWrap = document.getElementById("pv-tags");
+    tagsWrap.innerHTML = "";
+    (data.tags || []).forEach((t) => {
+      const el = document.createElement("span");
+      el.className = "ai-chip";
+      el.textContent = `#${t}`;
+      tagsWrap.appendChild(el);
+    });
+
+    const firstStepWrap = document.getElementById("pv-first-step-wrap");
+    if (data.recommended_first_step) {
+      firstStepWrap.style.display = "block";
+      document.getElementById("pv-first-step").textContent = data.recommended_first_step;
+    } else {
+      firstStepWrap.style.display = "none";
+    }
+
+    const stepsWrap = document.getElementById("pv-steps-wrap");
+    const stepsOl = document.getElementById("pv-steps");
+    stepsOl.innerHTML = "";
+    if ((data.steps || []).length > 0) {
+      stepsWrap.style.display = "block";
+      data.steps.forEach((s) => {
+        const li = document.createElement("li");
+        li.textContent = s;
+        stepsOl.appendChild(li);
+      });
+    } else {
+      stepsWrap.style.display = "none";
+    }
+
+    const warnWrap = document.getElementById("pv-warnings");
+    warnWrap.innerHTML = "";
+    const signals = (data.anti_overload && data.anti_overload.signals) || [];
+    const ocrSignals = data.ocr_warnings || [];
+    [...signals, ...ocrSignals].forEach((w) => {
+      const el = document.createElement("div");
+      el.className = "assist-warning";
+      el.textContent = `⚠ ${w}`;
+      warnWrap.appendChild(el);
+    });
+
+    const assistCard = document.getElementById("pv-assist");
+    assistCard.style.display = "block";
+    document.getElementById("pv-student-preview").textContent = data.student_preview || "—";
+    document.getElementById("pv-assignment-hint").textContent = (data.recommendations && data.recommendations.assignment_hint) || "—";
+    document.getElementById("pv-deadline-hint").textContent = (data.recommendations && data.recommendations.deadline_hint) || "—";
+
+    // Recognized (only for photo/voice)
+    const recWrap = document.getElementById("pv-recognized-wrap");
+    if (data.source_type !== "text" && data.recognized_text) {
+      recWrap.style.display = "block";
+      document.getElementById("pv-recognized").textContent = data.recognized_text;
+    } else {
+      recWrap.style.display = "none";
+    }
+
+    // Publish form
+    const textPayload = [data.title, data.description].filter(Boolean).join(". ") || data.recognized_text || "";
+    document.getElementById("publish-text").value = textPayload;
+    document.getElementById("publish-source").value = data.source_type || "text";
+    const localDue = toLocalInput(data.due_at);
+    if (localDue) document.getElementById("publish-due").value = localDue;
+
+    const draftEl = document.getElementById("client-draft-json");
+    if (draftEl) {
+      const rawIn = (data.recognized_text || data.raw_text || "").trim();
+      draftEl.value = JSON.stringify({
+        subject: data.subject || "",
+        title: data.title || "",
+        description: data.description || "",
+        priority: data.priority || "medium",
+        complexity: data.complexity || "medium",
+        estimated_time: data.estimated_time,
+        tags: data.tags || [],
+        recommended_first_step: data.recommended_first_step || "",
+        steps: data.steps || [],
+        confidence: data.confidence,
+        source_type: data.source_type || "text",
+        model: data.model || "",
+        raw_input: rawIn,
+      });
+    }
+
+    preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const postIngest = async (formData) => {
+    setStatus("Используется нейросеть, подождите...", "working");
+    try {
+      const res = await fetch("/api/ai/ingest", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!data.ok) {
+        setStatus(data.reason || "Не удалось получить preview", "error");
+        if (data.allow_client_stt && formData.get("source_type") === "voice") {
+          showVoiceFallback(data.reason || "");
+        }
+        return;
+      }
+      setStatus("Готово к выдаче", "ok");
+      renderPreview(data);
+    } catch (e) {
+      setStatus("Ошибка сети", "error");
+    }
+  };
+
+  const showVoiceFallback = (reason) => {
+    const panel = document.getElementById("ingest-voice-fallback");
+    const out = document.getElementById("ingest-voice-browser-out");
+    if (!panel) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      panel.style.display = "block";
+      if (out) out.textContent = "Браузер не поддерживает распознавание речи. Используйте Chrome или Edge.";
+      const btn = document.getElementById("ingest-voice-browser");
+      if (btn) btn.disabled = true;
+      return;
+    }
+    panel.style.display = "block";
+    if (out) out.textContent = reason || "Можно продиктовать в браузере.";
+  };
+
+  // =========================================================================
+  // Text tab
+  // =========================================================================
+  document.getElementById("ingest-text-btn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    const text = document.getElementById("ingest-text").value.trim();
+    if (!text) return;
+    btn.classList.add("loading");
+    btn.disabled = true;
+    const fd = new FormData();
+    fd.append("source_type", "text");
+    fd.append("text", text);
+    const classSel = document.getElementById("publish-class")?.value || "";
+    if (classSel) fd.append("class_name", classSel);
+    await postIngest(fd);
+    btn.classList.remove("loading");
+    btn.disabled = false;
+  });
+
+  // =========================================================================
+  // Photo tab
+  // =========================================================================
+  const photoFile = document.getElementById("ingest-photo-file");
+  const photoDrop = document.getElementById("ingest-photo-drop");
+  const photoStatus = document.getElementById("ingest-photo-status");
+  photoFile?.addEventListener("change", async () => {
+    const files = Array.from(photoFile.files || []).slice(0, 3);
+    if (!files.length) return;
+    photoStatus.style.display = "block";
+    photoStatus.textContent = "AI распознаёт текст с фото...";
+    const fd = new FormData();
+    fd.append("source_type", "photo");
+    fd.append("file", files[0]);
+    files.slice(1).forEach((f) => fd.append("files", f));
+    const mode = document.getElementById("ingest-photo-mode")?.value || "auto";
+    fd.append("photo_mode", mode);
+    await postIngest(fd);
+    photoStatus.textContent = "Фото обработано.";
+  });
+  ["dragenter", "dragover"].forEach((ev) => photoDrop?.addEventListener(ev, (e) => { e.preventDefault(); photoDrop.classList.add("is-drag"); }));
+  ["dragleave", "drop"].forEach((ev) => photoDrop?.addEventListener(ev, (e) => { e.preventDefault(); photoDrop.classList.remove("is-drag"); }));
+  photoDrop?.addEventListener("drop", (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    photoFile.files = e.dataTransfer.files;
+    photoFile.dispatchEvent(new Event("change"));
+  });
+
+  // =========================================================================
+  // Voice tab
+  // =========================================================================
+  const voiceFile = document.getElementById("ingest-voice-file");
+  const voiceStart = document.getElementById("ingest-voice-start");
+  const voiceStop = document.getElementById("ingest-voice-stop");
+  const voiceStatus = document.getElementById("ingest-voice-status");
+  const voiceTimer = document.getElementById("ingest-voice-timer");
+  const voiceHealthBtn = document.getElementById("ingest-voice-health");
+  const voiceHealthOut = document.getElementById("ingest-voice-health-out");
+
+  let mediaRec = null;
+  let chunks = [];
+  let timerI = null;
+  let secs = 0;
+
+  const micAvailable = !!(navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined");
+  if (!micAvailable) {
+    voiceStatus.textContent = "Микрофон недоступен. Загрузите аудио-файл.";
+    voiceStart?.setAttribute("disabled", "true");
+  } else {
+    voiceStatus.textContent = "Готов к записи.";
+  }
+
+  const voiceIngest = async (blob, filename) => {
+    const fd = new FormData();
+    fd.append("source_type", "voice");
+    fd.append("file", blob, filename || "voice.webm");
+    await postIngest(fd);
+  };
+
+  voiceFile?.addEventListener("change", async () => {
+    const f = voiceFile.files?.[0];
+    if (!f) return;
+    voiceStatus.textContent = "Обрабатываю аудио...";
+    await voiceIngest(f, f.name);
+    voiceStatus.textContent = "Готов к следующему вводу.";
+  });
+
+  voiceStart?.addEventListener("click", async () => {
+    if (!micAvailable) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      mediaRec = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      mediaRec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      mediaRec.onstop = async () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        stream.getTracks().forEach((t) => t.stop());
+        if (timerI) clearInterval(timerI);
+        timerI = null; secs = 0;
+        voiceTimer.style.display = "none";
+        voiceTimer.textContent = "Запись: 0с";
+        voiceStatus.textContent = "Запись завершена. AI думает...";
+        if (blob.size > 0) await voiceIngest(blob, "teacher-recording.webm");
+        voiceStatus.textContent = "Готов к следующему вводу.";
+      };
+      mediaRec.start();
+      voiceStart.disabled = true;
+      voiceStop.disabled = false;
+      voiceStart.textContent = "● Идет запись...";
+      voiceStatus.textContent = "Запись с микрофона...";
+      voiceTimer.style.display = "block";
+      secs = 0;
+      timerI = setInterval(() => { secs++; voiceTimer.textContent = `Запись: ${secs}с`; }, 1000);
+    } catch {
+      voiceStatus.textContent = "Не удалось получить доступ к микрофону.";
+    }
+  });
+
+  voiceStop?.addEventListener("click", () => {
+    if (!mediaRec || mediaRec.state === "inactive") return;
+    mediaRec.stop();
+    voiceStart.disabled = false;
+    voiceStop.disabled = true;
+    voiceStart.textContent = "🎙 Начать запись";
+  });
+
+  const voiceBrowserBtn = document.getElementById("ingest-voice-browser");
+  const voiceBrowserOut = document.getElementById("ingest-voice-browser-out");
+  voiceBrowserBtn?.addEventListener("click", () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      if (voiceBrowserOut) voiceBrowserOut.textContent = "Браузер не поддерживает распознавание.";
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "ru-RU";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.continuous = false;
+    voiceBrowserBtn.disabled = true;
+    voiceBrowserBtn.textContent = "● Говорите...";
+    if (voiceBrowserOut) voiceBrowserOut.textContent = "Слушаю...";
+    let finalText = "";
+    rec.onresult = (ev) => {
+      for (let i = 0; i < ev.results.length; i++) {
+        finalText += ev.results[i][0].transcript;
+      }
+    };
+    rec.onerror = (ev) => {
+      if (voiceBrowserOut) voiceBrowserOut.textContent = `Ошибка распознавания: ${ev.error || "unknown"}`;
+      voiceBrowserBtn.disabled = false;
+      voiceBrowserBtn.textContent = "🎧 Распознать браузером";
+    };
+    rec.onend = async () => {
+      voiceBrowserBtn.disabled = false;
+      voiceBrowserBtn.textContent = "🎧 Распознать браузером";
+      const text = (finalText || "").trim();
+      if (!text) {
+        if (voiceBrowserOut) voiceBrowserOut.textContent = "Ничего не распознал. Попробуйте ещё раз.";
+        return;
+      }
+      if (voiceBrowserOut) voiceBrowserOut.textContent = `Распознал: "${text.slice(0, 120)}"${text.length > 120 ? "…" : ""}`;
+      const fd = new FormData();
+      fd.append("source_type", "voice");
+      fd.append("text", text);
+      fd.append("client_stt", "1");
+      await postIngest(fd);
+    };
+    rec.start();
+  });
+
+  voiceHealthBtn?.addEventListener("click", async () => {
+    voiceHealthBtn.classList.add("loading");
+    voiceHealthBtn.disabled = true;
+    voiceHealthOut.style.display = "block";
+    voiceHealthOut.textContent = "Проверяю сервис распознавания речи...";
+    try {
+      const res = await fetch("/api/ai/transcribe-health?probe=1");
+      const data = await res.json();
+      const prefix = data.ok ? "✓" : "⚠";
+      const model = data.model ? ` [${data.model}]` : "";
+      voiceHealthOut.textContent = `${prefix} ${data.provider}${model}: ${data.reason || (data.ok ? "OK" : "проблема")}`;
+    } catch {
+      voiceHealthOut.textContent = "Не удалось выполнить проверку.";
+    } finally {
+      voiceHealthBtn.classList.remove("loading");
+      voiceHealthBtn.disabled = false;
+    }
+  });
+
+  // =========================================================================
+  // Publish form wiring (class/student/reset)
+  // =========================================================================
+  const assignMode = document.getElementById("publish-assignment");
+  const classSel = document.getElementById("publish-class");
+  const studentWrap = document.getElementById("publish-student-wrap");
+  const studentSel = document.getElementById("publish-student");
+  const studentOptions = Array.from(studentSel?.options || []);
+
+  const refreshStudentOptions = () => {
+    if (!studentSel || !classSel) return;
+    const v = classSel.value;
+    studentOptions.forEach((opt) => {
+      if (!opt.value) { opt.hidden = false; return; }
+      const c = opt.getAttribute("data-class") || "";
+      opt.hidden = v ? c !== v : false;
+    });
+    if (v && studentSel.selectedOptions[0]?.hidden) studentSel.value = "";
+  };
+  const refreshAssignMode = () => {
+    const single = assignMode?.value === "single";
+    if (studentWrap) studentWrap.style.display = single ? "flex" : "none";
+    if (studentSel) studentSel.required = !!single;
+  };
+  assignMode?.addEventListener("change", refreshAssignMode);
+  classSel?.addEventListener("change", refreshStudentOptions);
+  refreshAssignMode(); refreshStudentOptions();
+
+  document.getElementById("pv-reset")?.addEventListener("click", () => {
+    preview.classList.remove("is-visible");
+    lastPreview = null;
+    const d = document.getElementById("client-draft-json");
+    if (d) d.value = "";
+    setStatus("Готов к вводу");
+  });
+})();
+</script>
+{% endblock %}

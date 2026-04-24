@@ -1,0 +1,143 @@
+Smart Tracker AI - реализованные ИИ функции
+Дата: 2026-04-22
+
+1) Общая AI-архитектура
+- Введен provider-based слой с переключением через конфиг:
+  - BaseAIProvider (интерфейс)
+  - OpenAIProvider (временный основной)
+  - OllamaProvider (сохранен для обратного переключения)
+  - factory выбора провайдера по AI_PROVIDER
+- Центральная точка оркестрации: app/services/ai_gateway.py
+- Переключение:
+  - AI_PROVIDER=openai
+  - AI_PROVIDER=ollama
+
+2) Функция: Parse Task Draft
+- Назначение:
+  - из сырого ввода получить структурированную задачу
+- Метод:
+  - ai_gateway.parse_task_draft(raw_input, source_type)
+- Структура результата:
+  - source_type
+  - subject
+  - description
+  - due_at
+  - priority
+  - steps
+  - confidence
+  - model
+  - raw_input
+- Где используется:
+  - Teacher AI preview (форма учителя)
+  - API endpoint /api/ai/parse-draft
+  - API endpoint /api/ai/ingest-preview
+- Fallback:
+  - если AI-провайдер не ответил/вернул мусор -> rule-based parse через task_parser
+  - endpoint не падает
+
+3) Функция: Task Decomposition
+- Назначение:
+  - разбиение большой задачи на шаги
+- Метод:
+  - ai_gateway.decompose_task(subject, description)
+- Результат:
+  - steps (список шагов)
+  - confidence
+  - model
+- Где доступно:
+  - API endpoint /api/ai/decompose-task
+- Fallback:
+  - шаблонные 3 шага, если AI недоступен
+
+4) Функция: Smart Reminder Generation
+- Назначение:
+  - генерация текста напоминания с учетом контекста
+- Метод:
+  - ai_gateway.generate_reminder(...)
+- Входные параметры:
+  - subject
+  - description
+  - urgency
+  - anti_procrastination_mode
+  - role
+- Где используется:
+  - app/services/notifier.py в create_parent_reminder
+- Fallback:
+  - безопасный шаблонный текст напоминания
+  - создание reminder не ломается
+
+5) Функция: Progress Insight / Recommendation
+- Назначение:
+  - дать короткий инсайт и рекомендацию по прогрессу
+- Метод:
+  - ai_gateway.generate_progress_insight(subject, status, progress_events)
+- Где используется:
+  - app/services/ai_coach.py для AI next action на ученике/карточке задачи
+  - API endpoint /api/ai/progress-insight
+- Fallback:
+  - безопасные короткие insight/recommendation по шаблону
+
+6) Функция: AI Ingest Preview (OCR/STT showcase path)
+- Назначение:
+  - показать, как source_type=photo/voice/text проходит AI pipeline
+- Endpoint:
+  - /api/ai/ingest-preview
+- Что демонстрирует:
+  - source_type
+  - ingest_summary
+  - draft (структурированный результат)
+- Примечание:
+  - OCR/STT здесь отражены как входные каналы (edge ingestion path)
+
+7) Функция: Provider Health in Demo Preflight
+- Назначение:
+  - проверка готовности выбранного AI provider для демо
+- Где:
+  - app/services/demo_preflight.py
+- Логика:
+  - при AI_PROVIDER=openai проверяется ключ и модель
+  - при AI_PROVIDER=ollama проверяется доступность локального endpoint
+
+8) OpenAI Provider (реализация)
+- Файл:
+  - app/services/ai_providers/openai_provider.py
+- Поддерживаемые методы:
+  - parse_task_draft
+  - decompose_task
+  - generate_reminder
+  - generate_progress_insight
+- Технические особенности:
+  - вызов OpenAI Chat Completions API
+  - request response_format=json_object
+  - JSON parse + safe validation
+  - timeout из конфига
+  - retry policy из конфига
+
+9) Ollama Provider (совместимость)
+- Файл:
+  - app/services/ai_providers/ollama_provider.py
+- Сохранены те же методы интерфейса, что и у OpenAI provider
+- Переключение без изменений бизнес-кода через AI_PROVIDER
+
+10) Безопасность и конфиг
+- Ключи не захардкожены
+- Настройки через env:
+  - AI_PROVIDER
+  - OPENAI_API_KEY
+  - OPENAI_MODEL
+  - OPENAI_TIMEOUT
+  - OPENAI_TEMPERATURE
+  - OPENAI_MAX_OUTPUT_TOKENS
+  - OPENAI_RETRY_COUNT
+- .env.example обновлен шаблонными (пустыми/безопасными) значениями
+
+11) Что осталось совместимым
+- Основные роуты и текущая бизнес-логика не переписаны с нуля
+- Контракт parse_task_draft сохранен
+- Возврат на Ollama = смена AI_PROVIDER в env
+
+12) Короткий итог
+- Реализован единый AI слой с провайдерами.
+- Временная миграция на OpenAI выполнена.
+- Все ключевые AI-сценарии покрыты.
+- Везде добавлена безопасная деградация, чтобы не ронять веб/API флоу.

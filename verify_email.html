@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card">
+    {% if success %}
+      <span class="ai-badge">Готово</span>
+      <h2 style="margin-top: var(--sp-2);">Email подтверждён</h2>
+      <p class="muted">Аккаунт <b>{{ user.username }}</b> успешно активирован. Можно входить.</p>
+      <a href="/login" class="btn" style="width:100%; margin-top: var(--sp-3);">Перейти ко входу</a>
+    {% else %}
+      <span class="ai-badge" style="background: var(--warning-wash, rgba(234,179,8,0.15)); color: var(--warning-ink);">Ошибка</span>
+      <h2 style="margin-top: var(--sp-2);">Ссылка недействительна</h2>
+      <p class="muted">Токен не найден или уже использован. Зарегистрируйтесь заново — мы отправим свежую ссылку.</p>
+      <a href="/register" class="btn" style="width:100%; margin-top: var(--sp-3);">К регистрации</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

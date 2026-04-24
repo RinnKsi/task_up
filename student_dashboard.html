@@ -1,0 +1,814 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro status_label(status) -%}
+  {%- if status == "new" -%}Новая
+  {%- elif status == "in_progress" -%}В работе
+  {%- elif status == "done" -%}Выполнена
+  {%- elif status == "overdue" -%}Просрочена
+  {%- else -%}{{ status }}
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="student-dashboard-layout student-dashboard-layout--rail-fixed">
+<div class="student-dashboard-main">
+
+<section class="hero page-hero" aria-label="Личный кабинет">
+  <div class="page-hero-row">
+    <div class="page-hero-text">
+      <h2>Личный кабинет учащегося</h2>
+      <p>Задачи, фокус и прогресс в одном месте.</p>
+    </div>
+    <div class="page-hero-actions">
+      <a href="/profile/security" class="page-hero-link-subtle">Настройки</a>
+    </div>
+  </div>
+</section>
+
+{# ============================================================================
+   Smart Create (student self-task)
+   ============================================================================ #}
+<section class="ingest-shell ingest-shell--student">
+  <div class="cluster" style="justify-content: space-between; align-items: center;">
+    <h3 class="student-section-title" style="margin:0;">Новая задача</h3>
+    <span class="ingest-status" id="s-ingest-status">Готов к вводу</span>
+  </div>
+  <p class="muted student-ingest-lead">Текст, фото или голос — дальше запрос к Ollama и предпросмотр. Обычно несколько секунд, при первом запуске модели дольше.</p>
+  <div id="ai-wait-panel" class="ai-wait-panel" style="display:none;">
+    <div class="ai-wait-spinner"></div>
+    <div>
+      <div class="ai-wait-title">Обработка</div>
+      <div class="cat-text">Запрос к модели и сбор полей задачи…</div>
+    </div>
+  </div>
+
+  <div class="ingest-tabs" role="tablist">
+    <button type="button" class="ingest-tab is-active" data-tab="s-text">Текст</button>
+    <button type="button" class="ingest-tab" data-tab="s-photo">Фото</button>
+    <button type="button" class="ingest-tab" data-tab="s-voice">Голос</button>
+  </div>
+
+  <div class="ingest-pane is-active" data-pane="s-text">
+    <label>Текст задачи</label>
+    <textarea id="s-ingest-text" rows="3" placeholder="Например: по геометрии повторить теорему Пифагора"></textarea>
+    <button type="button" id="s-ingest-text-btn" class="btn">Анализировать AI</button>
+  </div>
+
+  <div class="ingest-pane" data-pane="s-photo">
+    <label>Режим OCR</label>
+    <select id="s-photo-mode">
+      <option value="auto">Авто</option>
+      <option value="board">Доска/маркер</option>
+      <option value="math">Математика/формулы</option>
+    </select>
+    <label for="s-photo-file" class="ingest-dropzone" id="s-photo-drop">
+      <b>Перетащите фото задания сюда</b>
+      <div class="muted" style="margin-top:6px;">или нажмите, чтобы выбрать 1-3 файла (jpg/png/heic)</div>
+    </label>
+    <input id="s-photo-file" type="file" accept="image/*" multiple style="display:none;">
+    <p class="muted" id="s-photo-status" style="display:none;"></p>
+  </div>
+
+  <div class="ingest-pane" data-pane="s-voice">
+    <div class="cluster">
+      <button type="button" id="s-voice-start" class="btn">🎙 Начать запись</button>
+      <button type="button" id="s-voice-stop" class="btn-secondary" disabled>Стоп</button>
+      <label class="btn-secondary" for="s-voice-file">Загрузить файл</label>
+      <input id="s-voice-file" type="file" accept="audio/*" style="display:none;">
+      <button type="button" id="s-voice-health" class="btn-ghost">Проверить распознавание</button>
+    </div>
+    <p class="muted" id="s-voice-status">Разрешите доступ к микрофону или выберите файл.</p>
+    <p class="muted" id="s-voice-timer" style="display:none;">Запись: 0с</p>
+    <p class="muted" id="s-voice-health-out" style="display:none;"></p>
+    <div id="s-voice-fallback" style="display:none;" class="ai-card">
+      <strong>Серверное распознавание недоступно.</strong>
+      <p class="muted" style="margin:4px 0 8px;">Продиктуйте в браузере — Chrome/Edge поддерживают распознавание.</p>
+      <button type="button" id="s-voice-browser" class="btn-secondary">🎧 Распознать браузером</button>
+      <p class="muted" id="s-voice-browser-out" style="margin-top:6px;"></p>
+    </div>
+  </div>
+
+  <div class="ingest-preview" id="s-preview">
+    <div class="ingest-preview-head">
+      <div>
+        <span class="ai-badge">Ollama предпросмотр</span>
+        <h3 class="ingest-preview-title" id="sp-title">—</h3>
+        <p class="muted" id="sp-subject" style="margin-top:2px;">—</p>
+      </div>
+    </div>
+    <p id="sp-description">—</p>
+    <details id="sp-recognized-wrap" style="margin:8px 0;">
+      <summary class="muted">Показать исходный распознанный текст</summary>
+      <pre id="sp-recognized" class="muted" style="white-space:pre-wrap; background:var(--surface-inset); padding:10px; border-radius:var(--radius-sm);"></pre>
+    </details>
+    <div class="ingest-preview-grid">
+      <div class="ingest-preview-field"><span class="label">Предмет</span><span class="value" id="sp-subject-val">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Дедлайн</span><span class="value" id="sp-due">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Сложность</span><span class="value" id="sp-complexity">—</span></div>
+      <div class="ingest-preview-field"><span class="label">Оценка времени</span><span class="value" id="sp-est">—</span></div>
+    </div>
+    <div class="ai-card" id="sp-deadline-analysis" style="display:none; margin-top:10px;">
+      <h4 style="margin:0 0 6px;">Ollama анализ дедлайна</h4>
+      <p class="muted" id="sp-deadline-analysis-text">—</p>
+      <p class="muted" id="sp-deadline-reco" style="display:none; margin-top:6px;"></p>
+      <button type="button" class="btn-secondary" id="sp-apply-deadline" style="display:none;">Применить рекомендуемый дедлайн</button>
+    </div>
+    <div id="sp-ocr-warnings"></div>
+    <div class="first-step-card" id="sp-first-step-wrap" style="display:none;">
+      <h4>Первый шаг</h4>
+      <p id="sp-first-step">—</p>
+    </div>
+
+    <form action="/student/tasks/self" method="post" id="s-publish-form" style="margin-top:var(--sp-4);">
+      <input type="hidden" name="text" id="sp-text">
+      <input type="hidden" name="source_type" id="sp-source" value="text">
+      <input type="hidden" name="client_draft_json" id="sp-draft-json" value="">
+      <label class="settings-field">
+        <span>Дедлайн</span>
+        <input name="due_at" id="sp-due-input" type="datetime-local">
+      </label>
+      <div class="publish-bar">
+        <div class="publish-grow muted">Проверьте данные и создайте задачу.</div>
+        <button type="button" class="btn-secondary" id="sp-reset">Сбросить</button>
+        <button type="submit" class="btn-xl btn-success">✅ Создать задачу</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+{% if featured_task %}
+<section class="card student-focus-card">
+  <div class="student-focus-head">
+    <div>
+      <h3 class="student-section-title">Сегодняшний фокус</h3>
+      <p class="muted student-tiny">Первая открытая задача по сроку — удобная точка входа, не «решение нейросети».</p>
+    </div>
+    {% if featured_urgency %}
+    <span class="urgency-wrap urgency-{{ featured_urgency.level }}">
+      {% if featured_urgency.level == "critical" %}<span class="rec-dot"></span>{% endif %}
+      {{ featured_urgency.label }}{% if featured_urgency.hours_left is not none and featured_urgency.level != "overdue" %} · {{ featured_urgency.hours_left }}ч{% endif %}
+    </span>
+    {% endif %}
+  </div>
+  {% if first_step %}
+  <p class="student-first-step"><span class="student-first-step-label">Первый шаг</span> {{ first_step }}</p>
+  {% endif %}
+  <article class="task-item urgency-{{ featured_urgency.level if featured_urgency else 'soon' }}-border">
+    <div class="task-top">
+      <div>
+        <p class="task-title">{{ featured_task.subject }}</p>
+        <p class="task-meta">{{ featured_task.description }}</p>
+      </div>
+      <span class="pill status-{{ featured_task.status.value }}">{{ status_label(featured_task.status.value) }}</span>
+    </div>
+    <p class="task-meta">Срок: {{ featured_task.due_at }}</p>
+    <div class="task-actions">
+      <a class="btn btn-ghost" href="/tasks/{{ featured_task.id }}">Карточка задачи</a>
+      <form action="/tasks/{{ featured_task.id }}/in-progress" method="post">
+        <button type="submit">В работу</button>
+      </form>
+      <form action="/tasks/{{ featured_task.id }}/done" method="post">
+        <button type="submit" class="btn-success">Готово</button>
+      </form>
+    </div>
+  </article>
+  <div class="student-next-hint">
+    <p class="student-next-hint-title">{{ next_action.title }}</p>
+    <p class="muted student-tiny" style="margin:0;">{{ next_action.message }}</p>
+  </div>
+</section>
+{% else %}
+<section class="card student-focus-card">
+  <h3 class="student-section-title">Сегодняшний фокус</h3>
+  <p class="muted student-tiny">Открытых задач нет. Создайте свою выше или дождитесь задания от учителя.</p>
+</section>
+{% endif %}
+
+<section class="student-digest-row">
+  <article class="card student-tiny-card">
+    <h4 class="student-tiny-title">Что важнее по срокам</h4>
+    <p class="muted student-tiny">{{ daily_digest.headline if daily_digest else "Список строится из ваших активных задач." }}</p>
+    <ul class="student-digest-list">
+      {% for p in (daily_digest.priorities if daily_digest else []) %}
+      <li><span class="digest-subj">{{ p.title }}</span><span class="muted"> — {{ p.why }}</span></li>
+      {% else %}
+      <li class="muted">Пока нечего ранжировать — добавьте задачу.</li>
+      {% endfor %}
+    </ul>
+    {% if daily_digest and daily_digest.note %}<p class="muted student-tiny" style="margin-bottom:0;">{{ daily_digest.note }}</p>{% endif %}
+  </article>
+  <article class="card student-tiny-card">
+    <h4 class="student-tiny-title">Напоминание</h4>
+    <p class="student-tiny" style="margin:0 0 6px;">{{ personal_motivation.message if personal_motivation else student_ai_reminder }}</p>
+    <p class="muted student-tiny" style="margin:0;">Короткий текст на странице. Чат с моделью — только в карточке задачи или когда нажимаете кнопки с AI.</p>
+  </article>
+</section>
+
+{% if ai_steps and featured_task %}
+<section class="card student-steps-card">
+  <h4 class="student-section-title">Шаги по «{{ featured_task.subject }}»</h4>
+  <p class="muted student-tiny">Если шаги были сохранены при разборе задания.</p>
+  <ol class="ai-steps student-steps-list">
+    {% for step in ai_steps %}<li>{{ step }}</li>{% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+<section class="card student-pomodoro-card">
+  <h4 class="student-section-title">Pomodoro</h4>
+  <p class="muted student-tiny">Таймер в браузере. «Цель» и «Итог» отправляют запрос к Ollama.</p>
+  <p id="pomodoro-state" class="student-pomo-state">Готов к сессии</p>
+  <div class="task-actions student-pomo-actions">
+    <button type="button" id="pomodoro-start">Старт</button>
+    <button type="button" id="pomodoro-reset" class="btn-secondary">Сброс</button>
+    {% if featured_task %}
+      <button type="button" id="focus-pre-btn" class="btn-ghost" data-task-id="{{ featured_task.id }}">Цель</button>
+      <button type="button" id="focus-post-btn" class="btn-ghost" data-task-id="{{ featured_task.id }}">Итог</button>
+    {% endif %}
+  </div>
+  <div id="focus-msg" class="focus-msg" style="display:none;"></div>
+</section>
+
+{% if ai_summary_month and ai_summary_month.summary %}
+<section class="ai-card">
+  <h3>Сводка месяца</h3>
+  <p><b>{{ ai_summary_month.summary }}</b></p>
+  {% if ai_summary_month.highlights %}
+  <ul>
+    {% for item in ai_summary_month.highlights %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h3 class="student-section-title">Список задач</h3>
+  <form method="get" class="row-form">
+    <select name="status">
+      <option value="">Все статусы</option>
+      <option value="new" {% if status_filter == "new" %}selected{% endif %}>Новые</option>
+      <option value="in_progress" {% if status_filter == "in_progress" %}selected{% endif %}>В работе</option>
+      <option value="done" {% if status_filter == "done" %}selected{% endif %}>Выполненные</option>
+      <option value="overdue" {% if status_filter == "overdue" %}selected{% endif %}>Просроченные</option>
+    </select>
+    <button type="submit" class="btn-secondary">Фильтр</button>
+  </form>
+  <div class="task-list">
+    {% for task in tasks %}
+    {% set u = task_urgencies.get(task.id) %}
+    <article class="task-item urgency-{{ (u.level if u else 'soon') }}-border">
+      <div class="task-top">
+        <div>
+          <p class="task-title">{{ task.subject }}</p>
+          <p class="task-meta">{{ task.description }}</p>
+        </div>
+        <div>
+          {% if u %}<span class="urgency-wrap urgency-{{ u.level }}">{{ u.label }}</span>{% endif %}
+          <span class="pill status-{{ task.status.value }}">{{ status_label(task.status.value) }}</span>
+        </div>
+      </div>
+      <p class="task-meta">Дедлайн: {{ task.due_at }}</p>
+      <p class="task-meta">Сложность (если задачу разбирали через AI): {{ complexity_percents.get(task.id, 0) }}%</p>
+      <p class="task-meta deadline-countdown" data-deadline="{{ task.due_at.isoformat() }}">До дедлайна: расчет...</p>
+      {% set ratio = (u.progress_ratio * 100)|round(0, 'floor') if u else 100 %}
+      {% set level = 'danger' if u and u.level in ('overdue', 'critical') else ('warn' if u and u.level == 'soon' else 'ok') %}
+      <div class="task-progress" data-level="{{ level }}" aria-label="Осталось времени до дедлайна" role="progressbar" aria-valuenow="{{ ratio }}" aria-valuemin="0" aria-valuemax="100">
+        <div class="task-progress-fill" style="width: {{ ratio }}%"></div>
+      </div>
+      <div class="task-actions">
+        <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Детали</a>
+        <form action="/tasks/{{ task.id }}/in-progress" method="post"><button type="submit">В работу</button></form>
+        <form action="/tasks/{{ task.id }}/done" method="post"><button type="submit" class="btn-success">Выполнено</button></form>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <h4>Пока пусто</h4>
+      <p class="muted">Создайте задачу блоком выше или получите её от учителя.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if archived_tasks %}
+<section class="card archived-zone">
+  <details>
+    <summary>Архив выполненных задач ({{ archived_tasks|length }})</summary>
+    <div class="task-list" style="margin-top:12px;">
+      {% for task in archived_tasks %}
+      <article class="task-item archived-task">
+        <div class="task-top">
+          <div>
+            <p class="task-title">{{ task.subject }}</p>
+            <p class="task-meta">{{ task.description }}</p>
+          </div>
+          <span class="pill status-done">Выполнена</span>
+        </div>
+        <p class="task-meta">Было выполнено. Дедлайн: {{ task.due_at }}</p>
+        <div class="task-actions">
+          <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Открыть</a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+</section>
+{% endif %}
+
+</div>
+
+<aside class="student-progress-aside" aria-label="Сводка прогресса">
+  <div class="student-rail-card" data-completion="{{ student_progress.completion_percent }}">
+    <div class="student-rail-glow" aria-hidden="true"></div>
+    <h3 class="student-rail-heading">Прогресс</h3>
+    <p class="student-rail-lead muted">Доля закрытых задач по всему кабинету.</p>
+
+    <div class="student-rail-ring-wrap">
+      <svg class="student-rail-ring" viewBox="0 0 140 140" aria-hidden="true">
+        <circle class="student-rail-ring-bg" cx="70" cy="70" r="58" fill="none" stroke-width="10" />
+        <circle class="student-rail-ring-fill js-rail-ring" cx="70" cy="70" r="58" fill="none" stroke-width="10"
+          stroke-linecap="round"
+          stroke-dasharray="364.425"
+          stroke-dashoffset="364.425"
+          data-rail-r="58"
+          data-percent="{{ student_progress.completion_percent }}"
+          transform="rotate(-90 70 70)" />
+      </svg>
+      <div class="student-rail-ring-center">
+        <div class="student-rail-pct-line">
+          <span class="js-rail-pct" data-target="{{ student_progress.completion_percent }}">0</span><span class="student-rail-pct-suffix">%</span>
+        </div>
+        <span class="student-rail-pct-caption">выполнено</span>
+      </div>
+    </div>
+
+    <div class="student-rail-stats">
+      <div class="student-rail-stat">
+        <span class="student-rail-stat-value js-count-up" data-target="{{ total_points }}">0</span>
+        <span class="student-rail-stat-label">баллов</span>
+      </div>
+      <div class="student-rail-stat">
+        <span class="student-rail-stat-value">{{ gamification.level }}</span>
+        <span class="student-rail-stat-label">уровень</span>
+      </div>
+      <div class="student-rail-stat">
+        <span class="student-rail-stat-value js-count-up" data-target="{{ student_progress.streak_days }}">0</span>
+        <span class="student-rail-stat-label">серия, дн.</span>
+      </div>
+    </div>
+
+    <div class="student-rail-bar">
+      <div class="student-rail-bar-top">
+        <span>Активность</span>
+        <span class="muted">{{ student_progress.active }} открыто · {{ student_progress.overdue }} просроч.</span>
+      </div>
+      <div class="student-rail-bar-track">
+        <div class="student-rail-bar-fill js-rail-bar-fill" data-width="{{ student_progress.completion_percent }}"></div>
+      </div>
+    </div>
+
+    {% if gamification.badges %}
+    <div class="student-rail-badges">
+      {% for badge in gamification.badges %}<span class="student-rail-badge">🏅 {{ badge }}</span>{% endfor %}
+    </div>
+    {% elif student_progress.total > 0 %}
+    <p class="muted student-tiny student-rail-foot">Несколько дней подряд с задачами — откроются значки.</p>
+    {% endif %}
+  </div>
+</aside>
+
+</div>
+
+<script>
+(() => {
+  // Deadline countdown
+  const nodes = document.querySelectorAll(".deadline-countdown");
+  const upd = () => {
+    const now = new Date();
+    nodes.forEach((n) => {
+      const d = new Date(n.dataset.deadline);
+      if (Number.isNaN(d.getTime())) { n.textContent = "До дедлайна: неизвестно"; return; }
+      const diff = d - now;
+      if (diff <= 0) { n.textContent = "До дедлайна: время вышло"; return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      n.textContent = `До дедлайна: ${h}ч ${m}м`;
+    });
+  };
+  upd(); setInterval(upd, 30000);
+
+  // Pomodoro
+  const stateNode = document.getElementById("pomodoro-state");
+  const startBtn = document.getElementById("pomodoro-start");
+  const resetBtn = document.getElementById("pomodoro-reset");
+  const focusPreBtn = document.getElementById("focus-pre-btn");
+  const focusPostBtn = document.getElementById("focus-post-btn");
+  const focusMsg = document.getElementById("focus-msg");
+  if (stateNode && startBtn && resetBtn) {
+    const fm = {{ current_user.preferences.pomodoro_focus_minutes if current_user and current_user.preferences else 25 }};
+    const bm = {{ current_user.preferences.pomodoro_break_minutes if current_user and current_user.preferences else 5 }};
+    let tId = null;
+    let remaining = fm * 60;
+    let isBreak = false;
+    const render = () => {
+      const m = Math.floor(remaining / 60).toString().padStart(2, "0");
+      const s = Math.floor(remaining % 60).toString().padStart(2, "0");
+      stateNode.textContent = `${isBreak ? "Перерыв" : "Фокус"}: ${m}:${s}`;
+    };
+    render();
+    startBtn.addEventListener("click", async () => {
+      if (tId) return;
+      tId = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) { isBreak = !isBreak; remaining = (isBreak ? bm : fm) * 60; }
+        render();
+      }, 1000);
+      if (focusPreBtn) await focusFor(focusPreBtn.dataset.taskId, "in");
+    });
+    resetBtn.addEventListener("click", () => { if (tId) clearInterval(tId); tId = null; isBreak = false; remaining = fm * 60; render(); });
+  }
+  const focusFor = async (taskId, stage) => {
+    if (!taskId || !focusMsg) return;
+    focusMsg.style.display = "block";
+    focusMsg.textContent = "AI коуч готовит рекомендацию...";
+    try {
+      const res = await fetch(`/api/ai/focus-support?task_id=${taskId}&stage=${stage}`, { method: "POST" });
+      const data = await res.json();
+      if (data.ok && data.focus) {
+        focusMsg.innerHTML = `<b>${data.focus.message || ""}</b><br><span class="muted">${data.focus.goal_hint || ""}</span>`;
+      } else {
+        focusMsg.textContent = "AI коуч временно недоступен.";
+      }
+    } catch { focusMsg.textContent = "AI коуч временно недоступен."; }
+  };
+  focusPreBtn?.addEventListener("click", () => focusFor(focusPreBtn.dataset.taskId, "pre"));
+  focusPostBtn?.addEventListener("click", () => focusFor(focusPostBtn.dataset.taskId, "post"));
+
+  // Прогресс: анимация кольца и чисел
+  const railCard = document.querySelector(".student-rail-card");
+  if (railCard) {
+    const pct = Math.max(0, Math.min(100, parseInt(railCard.dataset.completion || "0", 10) || 0));
+    const ring = railCard.querySelector(".js-rail-ring");
+    const rr = ring ? parseFloat(ring.dataset.railR || "58", 10) : 58;
+    const c = 2 * Math.PI * (Number.isFinite(rr) && rr > 0 ? rr : 58);
+    if (ring) {
+      ring.style.strokeDasharray = `${c}`;
+      ring.style.strokeDashoffset = `${c}`;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          ring.style.transition = "stroke-dashoffset 1.15s cubic-bezier(0.22, 1, 0.36, 1)";
+          ring.style.strokeDashoffset = `${c * (1 - pct / 100)}`;
+        });
+      });
+    }
+    const bar = railCard.querySelector(".js-rail-bar-fill");
+    if (bar) {
+      const w = Math.max(0, Math.min(100, parseInt(bar.dataset.width || "0", 10) || 0));
+      bar.style.width = "0%";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          bar.style.transition = "width 1.1s cubic-bezier(0.22, 1, 0.36, 1)";
+          bar.style.width = `${w}%`;
+        });
+      });
+    }
+    const pctEl = railCard.querySelector(".js-rail-pct");
+    if (pctEl) {
+      const target = parseInt(pctEl.dataset.target || "0", 10) || 0;
+      const t0 = performance.now();
+      const dur = 1000;
+      const tick = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const eased = 1 - (1 - p) ** 3;
+        pctEl.textContent = String(Math.round(target * eased));
+        if (p < 1) requestAnimationFrame(tick);
+        else pctEl.textContent = String(target);
+      };
+      requestAnimationFrame(tick);
+    }
+    railCard.querySelectorAll(".js-count-up").forEach((el) => {
+      const target = parseInt(el.dataset.target || "0", 10) || 0;
+      const t0 = performance.now();
+      const dur = 850;
+      const tick = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const eased = 1 - (1 - p) ** 3;
+        el.textContent = String(Math.round(target * eased));
+        if (p < 1) requestAnimationFrame(tick);
+        else el.textContent = String(target);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // ========================================================================
+  // Smart Ingest (student)
+  // ========================================================================
+  const tabs = document.querySelectorAll('.ingest-tab[data-tab^="s-"]');
+  const panes = document.querySelectorAll('.ingest-pane[data-pane^="s-"]');
+  tabs.forEach((t) => t.addEventListener("click", () => {
+    tabs.forEach((x) => x.classList.remove("is-active"));
+    panes.forEach((p) => p.classList.remove("is-active"));
+    t.classList.add("is-active");
+    document.querySelector(`[data-pane="${t.dataset.tab}"]`)?.classList.add("is-active");
+  }));
+
+  const status = document.getElementById("s-ingest-status");
+  const waitPanel = document.getElementById("ai-wait-panel");
+  const toggleWaitCat = (visible) => { if (waitPanel) waitPanel.style.display = visible ? "flex" : "none"; };
+  const setStatus = (text, kind = "") => {
+    status.className = "ingest-status " + (kind ? `is-${kind}` : "");
+    status.textContent = text;
+  };
+  const preview = document.getElementById("s-preview");
+
+  const fmtDue = (iso) => {
+    if (!iso) return "не задан";
+    try { const d = new Date(iso); if (Number.isNaN(d.getTime())) return iso;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return iso; }
+  };
+  const toLocalInput = (iso) => {
+    if (!iso) return "";
+    try { const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return ""; }
+  };
+  const complexityLabel = (c) => ({easy: "Лёгкая", medium: "Средняя", hard: "Сложная"}[c] || "Средняя");
+
+  const renderPreview = (data) => {
+    preview.classList.add("is-visible");
+    document.getElementById("sp-title").textContent = data.title || data.subject || "Задача";
+    document.getElementById("sp-subject").textContent = data.subject ? `Предмет: ${data.subject}` : "";
+    document.getElementById("sp-subject-val").textContent = data.subject || "—";
+    document.getElementById("sp-description").textContent = data.description || "—";
+    document.getElementById("sp-due").textContent = fmtDue(data.due_at);
+    document.getElementById("sp-complexity").textContent = complexityLabel(data.complexity);
+    document.getElementById("sp-est").textContent = data.estimated_time ? `${data.estimated_time} мин` : "—";
+    const da = document.getElementById("sp-deadline-analysis");
+    const daText = document.getElementById("sp-deadline-analysis-text");
+    if (data.deadline_analysis && data.deadline_analysis.resolved_due) {
+      da.style.display = "block";
+      const src = data.deadline_analysis.source || "ai";
+      const phrase = data.deadline_analysis.phrase || "неявная дата";
+      daText.textContent = `Фраза: "${phrase}". Источник: ${src}. Дедлайн выставлен как ${fmtDue(data.deadline_analysis.resolved_due)}.`;
+    } else {
+      da.style.display = "none";
+      daText.textContent = "";
+    }
+    const dueReco = document.getElementById("sp-deadline-reco");
+    const applyBtn = document.getElementById("sp-apply-deadline");
+    const recoIso = data.recommendations && data.recommendations.recommended_due_at;
+    if (recoIso) {
+      dueReco.style.display = "block";
+      dueReco.textContent = `Рекомендация Ollama: поставить срок не раньше ${fmtDue(recoIso)}.`;
+      applyBtn.style.display = "inline-flex";
+      applyBtn.onclick = () => {
+        const local = toLocalInput(recoIso);
+        if (local) document.getElementById("sp-due-input").value = local;
+      };
+    } else {
+      dueReco.style.display = "none";
+      dueReco.textContent = "";
+      applyBtn.style.display = "none";
+      applyBtn.onclick = null;
+    }
+    const ocrWarn = document.getElementById("sp-ocr-warnings");
+    ocrWarn.innerHTML = "";
+    (data.ocr_warnings || []).forEach((w) => {
+      const el = document.createElement("div");
+      el.className = "assist-warning";
+      el.textContent = `⚠ ${w}`;
+      ocrWarn.appendChild(el);
+    });
+
+    const fsw = document.getElementById("sp-first-step-wrap");
+    if (data.recommended_first_step) {
+      fsw.style.display = "block";
+      document.getElementById("sp-first-step").textContent = data.recommended_first_step;
+    } else { fsw.style.display = "none"; }
+
+    const recWrap = document.getElementById("sp-recognized-wrap");
+    if (data.source_type !== "text" && data.recognized_text) {
+      recWrap.style.display = "block";
+      document.getElementById("sp-recognized").textContent = data.recognized_text;
+    } else { recWrap.style.display = "none"; }
+
+    const text = [data.title, data.description].filter(Boolean).join(". ") || data.recognized_text || "";
+    document.getElementById("sp-text").value = text;
+    document.getElementById("sp-source").value = data.source_type || "text";
+    const localDue = toLocalInput(data.due_at);
+    if (localDue) document.getElementById("sp-due-input").value = localDue;
+
+    const draftEl = document.getElementById("sp-draft-json");
+    if (draftEl) {
+      const rawIn = (data.recognized_text || data.raw_text || "").trim();
+      draftEl.value = JSON.stringify({
+        subject: data.subject || "",
+        title: data.title || "",
+        description: data.description || "",
+        priority: data.priority || "medium",
+        complexity: data.complexity || "medium",
+        estimated_time: data.estimated_time,
+        tags: data.tags || [],
+        recommended_first_step: data.recommended_first_step || "",
+        steps: data.steps || [],
+        confidence: data.confidence,
+        source_type: data.source_type || "text",
+        model: data.model || "",
+        raw_input: rawIn,
+      });
+    }
+    preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const doIngest = async (formData) => {
+    setStatus("Используется нейросеть, подождите...", "working");
+    toggleWaitCat(true);
+    try {
+      const res = await fetch("/api/ai/ingest", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!data.ok) {
+        setStatus(data.reason || "Ошибка", "error");
+        if (data.allow_client_stt && formData.get("source_type") === "voice") {
+          showStudentVoiceFallback(data.reason || "");
+        }
+        return;
+      }
+      setStatus("Готово", "ok");
+      renderPreview(data);
+    } catch { setStatus("Ошибка сети", "error"); }
+    finally { toggleWaitCat(false); }
+  };
+
+  const showStudentVoiceFallback = (reason) => {
+    const panel = document.getElementById("s-voice-fallback");
+    const out = document.getElementById("s-voice-browser-out");
+    const btn = document.getElementById("s-voice-browser");
+    if (!panel) return;
+    panel.style.display = "block";
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      if (out) out.textContent = "Браузер не поддерживает распознавание. Используйте Chrome или Edge.";
+      if (btn) btn.disabled = true;
+      return;
+    }
+    if (out) out.textContent = reason || "Можно продиктовать в браузере.";
+  };
+
+  document.getElementById("s-ingest-text-btn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    const text = document.getElementById("s-ingest-text").value.trim();
+    if (!text) return;
+    btn.classList.add("loading"); btn.disabled = true;
+    const fd = new FormData();
+    fd.append("source_type", "text");
+    fd.append("text", text);
+    await doIngest(fd);
+    btn.classList.remove("loading"); btn.disabled = false;
+  });
+
+  // Photo
+  const pFile = document.getElementById("s-photo-file");
+  const pDrop = document.getElementById("s-photo-drop");
+  const pStatus = document.getElementById("s-photo-status");
+  pFile?.addEventListener("change", async () => {
+    const files = Array.from(pFile.files || []).slice(0, 3);
+    if (!files.length) return;
+    pStatus.style.display = "block";
+    pStatus.textContent = "Ollama распознаёт текст с фото...";
+    const fd = new FormData();
+    fd.append("source_type", "photo");
+    fd.append("file", files[0]);
+    files.slice(1).forEach((f) => fd.append("files", f));
+    const mode = document.getElementById("s-photo-mode")?.value || "auto";
+    fd.append("photo_mode", mode);
+    await doIngest(fd);
+    pStatus.textContent = "Фото обработано.";
+  });
+  ["dragenter", "dragover"].forEach((ev) => pDrop?.addEventListener(ev, (e) => { e.preventDefault(); pDrop.classList.add("is-drag"); }));
+  ["dragleave", "drop"].forEach((ev) => pDrop?.addEventListener(ev, (e) => { e.preventDefault(); pDrop.classList.remove("is-drag"); }));
+  pDrop?.addEventListener("drop", (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    pFile.files = e.dataTransfer.files;
+    pFile.dispatchEvent(new Event("change"));
+  });
+
+  // Voice
+  const vFile = document.getElementById("s-voice-file");
+  const vStart = document.getElementById("s-voice-start");
+  const vStop = document.getElementById("s-voice-stop");
+  const vStatus = document.getElementById("s-voice-status");
+  const vTimer = document.getElementById("s-voice-timer");
+  const vHealthBtn = document.getElementById("s-voice-health");
+  const vHealthOut = document.getElementById("s-voice-health-out");
+
+  let rec = null, chunks = [], tI = null, secs = 0;
+  const micOk = !!(navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined");
+  if (!micOk) { vStatus.textContent = "Микрофон недоступен. Загрузите аудио."; vStart.disabled = true; }
+
+  const voiceIngest = async (blob, filename) => {
+    const fd = new FormData();
+    fd.append("source_type", "voice");
+    fd.append("file", blob, filename || "voice.webm");
+    await doIngest(fd);
+  };
+  vFile?.addEventListener("change", async () => {
+    const f = vFile.files?.[0]; if (!f) return;
+    vStatus.textContent = "Обрабатываю аудио...";
+    await voiceIngest(f, f.name);
+    vStatus.textContent = "Готов к следующему вводу.";
+  });
+  vStart?.addEventListener("click", async () => {
+    if (!micOk) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      rec = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      rec.onstop = async () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        stream.getTracks().forEach((t) => t.stop());
+        if (tI) clearInterval(tI); tI = null; secs = 0;
+        vTimer.style.display = "none"; vTimer.textContent = "Запись: 0с";
+        vStatus.textContent = "Запись завершена. AI думает...";
+        if (blob.size > 0) await voiceIngest(blob, "student-voice.webm");
+        vStatus.textContent = "Готов к следующему вводу.";
+      };
+      rec.start();
+      vStart.disabled = true; vStop.disabled = false;
+      vStart.textContent = "● Идет запись...";
+      vStatus.textContent = "Запись с микрофона...";
+      vTimer.style.display = "block"; secs = 0;
+      tI = setInterval(() => { secs++; vTimer.textContent = `Запись: ${secs}с`; }, 1000);
+    } catch { vStatus.textContent = "Не удалось получить доступ к микрофону."; }
+  });
+  vStop?.addEventListener("click", () => {
+    if (!rec || rec.state === "inactive") return;
+    rec.stop();
+    vStart.disabled = false; vStop.disabled = true;
+    vStart.textContent = "🎙 Начать запись";
+  });
+  const vBrowserBtn = document.getElementById("s-voice-browser");
+  const vBrowserOut = document.getElementById("s-voice-browser-out");
+  vBrowserBtn?.addEventListener("click", () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { if (vBrowserOut) vBrowserOut.textContent = "Браузер не поддерживает распознавание."; return; }
+    const srec = new SR();
+    srec.lang = "ru-RU";
+    srec.interimResults = false;
+    srec.maxAlternatives = 1;
+    srec.continuous = false;
+    vBrowserBtn.disabled = true;
+    vBrowserBtn.textContent = "● Говорите...";
+    if (vBrowserOut) vBrowserOut.textContent = "Слушаю...";
+    let finalText = "";
+    srec.onresult = (ev) => {
+      for (let i = 0; i < ev.results.length; i++) finalText += ev.results[i][0].transcript;
+    };
+    srec.onerror = (ev) => {
+      if (vBrowserOut) vBrowserOut.textContent = `Ошибка распознавания: ${ev.error || "unknown"}`;
+      vBrowserBtn.disabled = false; vBrowserBtn.textContent = "🎧 Распознать браузером";
+    };
+    srec.onend = async () => {
+      vBrowserBtn.disabled = false;
+      vBrowserBtn.textContent = "🎧 Распознать браузером";
+      const text = (finalText || "").trim();
+      if (!text) { if (vBrowserOut) vBrowserOut.textContent = "Ничего не распознал. Попробуйте ещё раз."; return; }
+      if (vBrowserOut) vBrowserOut.textContent = `Распознал: "${text.slice(0, 120)}"${text.length > 120 ? "…" : ""}`;
+      const fd = new FormData();
+      fd.append("source_type", "voice");
+      fd.append("text", text);
+      fd.append("client_stt", "1");
+      await doIngest(fd);
+    };
+    srec.start();
+  });
+
+  vHealthBtn?.addEventListener("click", async () => {
+    vHealthBtn.classList.add("loading"); vHealthBtn.disabled = true;
+    vHealthOut.style.display = "block";
+    vHealthOut.textContent = "Проверяю сервис распознавания речи...";
+    try {
+      const res = await fetch("/api/ai/transcribe-health?probe=1");
+      const data = await res.json();
+      const prefix = data.ok ? "✓" : "⚠";
+      const model = data.model ? ` [${data.model}]` : "";
+      vHealthOut.textContent = `${prefix} ${data.provider}${model}: ${data.reason || (data.ok ? "OK" : "проблема")}`;
+    } catch { vHealthOut.textContent = "Не удалось выполнить проверку."; }
+    finally { vHealthBtn.classList.remove("loading"); vHealthBtn.disabled = false; }
+  });
+
+  document.getElementById("sp-reset")?.addEventListener("click", () => {
+    preview.classList.remove("is-visible");
+    const d = document.getElementById("sp-draft-json");
+    if (d) d.value = "";
+    setStatus("Готов к вводу");
+  });
+})();
+</script>
+{% endblock %}

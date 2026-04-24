@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro status_label(status) -%}
+  {%- if status == "new" -%}Новая
+  {%- elif status == "in_progress" -%}В работе
+  {%- elif status == "done" -%}Выполнена
+  {%- elif status == "overdue" -%}Просрочена
+  {%- else -%}{{ status }}
+  {%- endif -%}
+{%- endmacro %}
+<section class="hero">
+  <h2>Кабинет родителя</h2>
+  <p>Где риск сейчас: фокус на дедлайнах и изменениях, которые требуют вашего внимания.</p>
+</section>
+
+{% if parent_uses_student_tasks and (registered_child_login or linked_children) %}
+<section class="card" style="margin-bottom: var(--sp-4);">
+  <h3 style="margin-top:0;">Ребёнок в системе</h3>
+  {% if registered_child_login %}
+  <p class="muted" style="margin:0 0 var(--sp-2);">
+    <b>Логин при регистрации:</b> @{{ registered_child_login }}
+  </p>
+  {% endif %}
+  {% if linked_children %}
+  <ul style="margin:0; padding-left: 1.2rem;">
+    {% for ch in linked_children %}
+    <li><b>{{ ch.full_name }}</b> · учётная запись @{{ ch.username }} · ID {{ ch.id }}</li>
+    {% endfor %}
+  </ul>
+  {% elif registered_child_login %}
+  <p class="muted" style="margin: var(--sp-2) 0 0;">Привязка ещё не подтверждена учеником — откройте «Мой ребёнок» в меню и отправьте запрос ещё раз при необходимости.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if parent_insight and parent_insight.insight %}
+<section class="ai-card">
+  <h3>AI инсайт для родителя <span class="ai-badge">parent-friendly</span></h3>
+  <p><b>{{ parent_insight.headline }}</b></p>
+  <div class="parent-insight-grid">
+    <div>
+      <h5 style="margin: 0 0 4px;">Что видно</h5>
+      <p class="muted" style="margin: 0;">{{ parent_insight.observation or parent_insight.insight }}</p>
+    </div>
+    {% if parent_insight.why %}
+    <div>
+      <h5 style="margin: 0 0 4px;">Почему так может быть</h5>
+      <p class="muted" style="margin: 0;">{{ parent_insight.why }}</p>
+    </div>
+    {% endif %}
+    {% if parent_insight.soft_action or parent_insight.support_tip %}
+    <div>
+      <h5 style="margin: 0 0 4px;">Одно мягкое действие сегодня</h5>
+      <p class="muted" style="margin: 0;">{{ parent_insight.soft_action or parent_insight.support_tip }}</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if parent_summary and parent_summary.summary %}
+<section class="ai-card">
+  <h3>AI summary недели</h3>
+  <p>{{ parent_summary.summary }}</p>
+  {% if parent_summary.highlights %}
+  <ul>
+    {% for item in parent_summary.highlights %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="kpi-grid">
+  <div class="card">
+    <div class="metric">{{ parent_day_stats.done if parent_day_stats else done_count }}</div>
+    <div class="muted">Сделано за сутки</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ parent_week_stats.done if parent_week_stats else done_count }}</div>
+    <div class="muted">Сделано за неделю</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ parent_week_stats.overdue if parent_week_stats else overdue_count }}</div>
+    <div class="muted">Риски недели</div>
+  </div>
+</section>
+
+{% if parent_digest_day and parent_digest_day.summary %}
+<section class="ai-card compact-motivation">
+  <h3>Короткий digest за день</h3>
+  <p class="muted">{{ parent_digest_day.summary }}</p>
+</section>
+{% endif %}
+
+{% if parent_digest_week and parent_digest_week.summary %}
+<section class="ai-card compact-motivation">
+  <h3>Короткий digest за неделю</h3>
+  <p class="muted">{{ parent_digest_week.summary }}</p>
+</section>
+{% endif %}
+
+<section class="kpi-grid">
+  <div class="card">
+    <div class="metric">{{ overdue_count }}</div>
+    <div class="muted">Просрочено</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ done_count }}</div>
+    <div class="muted">Выполнено</div>
+  </div>
+  <div class="card">
+    <div class="metric">{{ attention_tasks|length }}</div>
+    <div class="muted">Требует внимания</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>{% if parent_uses_student_tasks %}Задачи ребёнка: что сделано и что ещё нет{% else %}Задачи родительского кабинета{% endif %}</h2>
+  <p class="muted">{% if parent_uses_student_tasks %}Сводка по заданиям из аккаунта привязанного ученика.{% else %}Задачи, в которых указан этот родитель.{% endif %}</p>
+  <form method="get" class="row-form">
+    <select name="status">
+      <option value="">Все статусы</option>
+      <option value="overdue" {% if status_filter == "overdue" %}selected{% endif %}>Только просроченные</option>
+      <option value="new" {% if status_filter == "new" %}selected{% endif %}>Новые</option>
+      <option value="in_progress" {% if status_filter == "in_progress" %}selected{% endif %}>В работе</option>
+      <option value="done" {% if status_filter == "done" %}selected{% endif %}>Выполненные</option>
+    </select>
+    <button type="submit">Фильтр</button>
+  </form>
+
+  {% if parent_uses_student_tasks and not linked_children and not tasks %}
+  <div class="empty-state" style="margin-top: var(--sp-3);">
+    <div class="empty-icon">🔗</div>
+    <h4>Пока нет привязки</h4>
+    <p>После подтверждения связи с учеником здесь появятся его задачи. Раздел «Мой ребёнок» в шапке поможет отправить запрос.</p>
+  </div>
+  {% else %}
+
+  <h3 class="settings-section-title" style="margin-top: var(--sp-4);">Ещё не сделано</h3>
+  <div class="task-list">
+    {% for task in tasks_not_done %}
+    {% set u = task_urgencies.get(task.id) %}
+    <article class="task-item urgency-{{ (u.level if u else 'soon') }}-border">
+      <div class="task-top">
+        <div>
+          <p class="task-title">{{ task.subject }}{% if task.student %} <span class="muted">· {{ task.student.full_name }}</span>{% endif %}</p>
+          <p class="task-meta">{{ task.description }}</p>
+        </div>
+        <div>
+          {% if u %}<span class="urgency-wrap urgency-{{ u.level }}">{{ u.label }}</span>{% endif %}
+          <span class="pill status-{{ task.status.value }}">{{ status_label(task.status.value) }}</span>
+        </div>
+      </div>
+      <div class="task-actions">
+        <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Детали задачи</a>
+      </div>
+    </article>
+    {% else %}
+    <p class="muted">Нет открытых задач — всё выполнено или фильтр скрыл список.</p>
+    {% endfor %}
+  </div>
+
+  <h3 class="settings-section-title" style="margin-top: var(--sp-4);">Уже сделано</h3>
+  <div class="task-list">
+    {% for task in tasks_done %}
+    {% set u = task_urgencies.get(task.id) %}
+    <article class="task-item urgency-{{ (u.level if u else 'soon') }}-border">
+      <div class="task-top">
+        <div>
+          <p class="task-title">{{ task.subject }}{% if task.student %} <span class="muted">· {{ task.student.full_name }}</span>{% endif %}</p>
+          <p class="task-meta">{{ task.description }}</p>
+        </div>
+        <div>
+          {% if u %}<span class="urgency-wrap urgency-{{ u.level }}">{{ u.label }}</span>{% endif %}
+          <span class="pill status-{{ task.status.value }}">{{ status_label(task.status.value) }}</span>
+        </div>
+      </div>
+      <div class="task-actions">
+        <a class="btn btn-ghost" href="/tasks/{{ task.id }}">Детали задачи</a>
+      </div>
+    </article>
+    {% else %}
+    <p class="muted">Пока нет завершённых задач в выборке.</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,55 @@
+<!doctype html>
+{%- set prefs = current_user.preferences if current_user else None -%}
+{%- set theme_pref = prefs.theme if prefs and prefs.theme else "light" -%}
+{%- set a11y_on = prefs.accessibility_mode if prefs else False -%}
+{%- set big_buttons = prefs.ui_large_buttons if prefs and prefs.ui_large_buttons is defined else False -%}
+{%- set simplified = prefs.ui_simplified if prefs and prefs.ui_simplified is defined else False -%}
+<html lang="ru" data-server-theme="{{ theme_pref }}" data-theme="{{ 'a11y' if a11y_on and theme_pref == 'light' else (theme_pref if theme_pref in ['light','dark','a11y'] else 'light') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#4f46e5">
+  <title>Smart Tracker AI — Умный трекер учебных задач</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/ambient-bg.js" defer></script>
+</head>
+<body class="{% if a11y_on %}a11y-big{% endif %}{% if big_buttons %} a11y-big{% endif %}{% if simplified %} ui-simplified{% endif %}">
+  <div class="ambient-bg-root" aria-hidden="true"><canvas id="ambient-canvas"></canvas></div>
+  <header class="topbar">
+    <div class="container header-shell">
+      <div>
+        <a href="/" class="brand-title">Smart Tracker AI</a>
+        <span class="brand-subtitle">Учебный порядок для ученика, родителя и учителя</span>
+      </div>
+      <nav class="nav-cluster" aria-label="Основное меню">
+        <a href="/" class="nav-link">Главная</a>
+        {% if current_user %}
+          {% if current_user.role.value == "teacher" %}
+            <a href="/teacher" class="nav-link">Учитель</a>
+            <a href="/teacher/ratings" class="nav-link">Рейтинг класса</a>
+          {% elif current_user.role.value == "student" %}
+            <a href="/student/{{ current_user.id }}" class="nav-link">Ученик</a>
+          {% elif current_user.role.value == "parent" %}
+            <a href="/parent/{{ current_user.id }}" class="nav-link">Родитель</a>
+            <a href="/parent/{{ current_user.id }}/connect" class="nav-link">Мой ребёнок</a>
+          {% endif %}
+          <a href="/notifications" class="nav-link">Уведомления</a>
+          <a href="/profile/security" class="nav-link">Настройки</a>
+          <button type="button" id="theme-quick-toggle" class="theme-toggle" aria-label="Переключить тему">✦ Тема</button>
+          <form action="/logout" method="post" class="inline-form">
+            <button type="submit" class="btn-secondary">Выйти · {{ current_user.username }}</button>
+          </form>
+        {% else %}
+          <button type="button" id="theme-quick-toggle" class="theme-toggle" aria-label="Переключить тему">✦ Тема</button>
+          <a href="/login" class="btn btn-ghost">Вход</a>
+          <a href="/register" class="btn">Регистрация</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="container layout">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
